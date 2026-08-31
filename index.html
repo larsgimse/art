@@ -1,1 +1,256 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimalistisk GPX-Poster Generator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --card-bg: #111111;
+            --border-color: #ffffff;
+            --text-color: #ffffff;
+            --accent-orange: #fc4c02;
+        }
 
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 12px;
+            z-index: 1000;
+        }
+
+        .btn {
+            padding: 10px 18px;
+            background: #222;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover { background: #333; border-color: #666; }
+        .btn-primary { background: var(--accent-orange); border-color: var(--accent-orange); }
+        .btn-primary:hover { background: #e04300; }
+
+        input[type="file"] { display: none; }
+
+        /* Plakat-ramme (Poster Layout) */
+        #poster-frame {
+            width: 450px;
+            background: var(--card-bg);
+            border: 12px solid var(--border-color);
+            padding: 30px 20px 20px 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            position: relative;
+        }
+
+        .poster-header {
+            text-align: center;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            width: 100%;
+        }
+
+        .poster-header h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+
+        .poster-header span {
+            font-size: 0.7rem;
+            color: #888;
+            letter-spacing: 1px;
+        }
+
+        #map-wrapper {
+            width: 100%;
+            height: 480px;
+            border: 1px solid #222;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            background: #0d0d0d;
+        }
+
+        .poster-footer {
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            letter-spacing: 1.5px;
+            color: #aaa;
+            text-align: center;
+        }
+
+        #placeholder-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #666;
+            font-size: 0.85rem;
+            pointer-events: none;
+            z-index: 500;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <label for="gpx-input" class="btn btn-primary">📁 Velg GPX-fil</label>
+        <input type="file" id="gpx-input" accept=".gpx">
+        <button id="download-btn" class="btn" style="display: none;">📥 Last ned bilde</button>
+    </div>
+
+    <!-- Minimalistisk Ramme -->
+    <div id="poster-frame">
+        <div class="poster-header">
+            <h2 id="location-name">DIN TUR</h2>
+            <span id="location-sub">LAST OPP GPX FOR Å GENERERE</span>
+        </div>
+
+        <div id="map-wrapper">
+            <div id="placeholder-text">Ingen fil valgt</div>
+            <div id="map"></div>
+        </div>
+
+        <div class="poster-footer">
+            <span id="coordinates">00.0000° N / 00.0000° E</span>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
+
+    <script>
+        // Initiailser kartet med mørkt bakgrunnslag (CARTO Dark)
+        const map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false
+        }).setView([69.65, 18.95], 10);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+            subdomains: 'abcd'
+        }).addTo(map);
+
+        let currentGpxLayer = null;
+
+        document.getElementById('gpx-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const gpxData = event.target.result;
+                tegnGpxSpor(gpxData);
+                // Nullstill input-feltet slik at filen ikke oppbevares i DOM[cite: 1]
+                document.getElementById('gpx-input').value = '';
+            };
+            
+            // Leser filen midlertidig inn i minnet (RAM)[cite: 1]
+            reader.readAsText(file);
+        });
+
+        function tegnGpxSpor(gpxString) {
+            if (currentGpxLayer) {
+                map.removeLayer(currentGpxLayer);
+            }
+
+            document.getElementById('placeholder-text').style.display = 'none';
+
+            // Opprett GPX-lag fra strengdata i minnet
+            currentGpxLayer = new L.GPX(gpxString, {
+                async: true,
+                polyline_options: {
+                    color: '#fc4c02', // Strava-oransje linje
+                    opacity: 0.9,
+                    weight: 3,
+                    lineCap: 'round'
+                },
+                marker_options: { startIconUrl: null, endIconUrl: null, shadowUrl: null }
+            }).on('loaded', function(e) {
+                const gpx = e.target;
+                map.fitBounds(gpx.getBounds(), { padding: [30, 30] });
+
+                // Senter av sporet
+                const center = gpx.getBounds().getCenter();
+                oppdaterKoordinater(center.lat, center.lng);
+                hentStedsnavn(center.lat, center.lng);
+
+                document.getElementById('download-btn').style.display = 'inline-block';
+            }).addTo(map);
+        }
+
+        function oppdaterKoordinater(lat, lng) {
+            const latStr = Math.abs(lat).toFixed(4) + '° ' + (lat >= 0 ? 'N' : 'S');
+            const lngStr = Math.abs(lng).toFixed(4) + '° ' + (lng >= 0 ? 'E' : 'W');
+            document.getElementById('coordinates').innerText = `${latStr} / ${lngStr}`;
+        }
+
+        // Reverse Geocoding med OpenStreetMap Nominatim
+        async function hentStedsnavn(lat, lng) {
+            document.getElementById('location-name').innerText = "HENTER STED...";
+            document.getElementById('location-sub').innerText = "";
+
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=12`);
+                const data = await res.json();
+                
+                const addr = data.address || {};
+                const hovedNavn = addr.mountain || addr.natural || addr.village || addr.town || addr.municipality || "UTEN NAVN";
+                const underNavn = addr.county || addr.state || addr.country || "";
+
+                document.getElementById('location-name').innerText = hovedNavn.toUpperCase();
+                document.getElementById('location-sub').innerText = underNavn.toUpperCase();
+            } catch (err) {
+                document.getElementById('location-name').innerText = "SPORUTSNITT";
+                document.getElementById('location-sub').innerText = "";
+            }
+        }
+
+        // Generer og last ned bilde
+        document.getElementById('download-btn').addEventListener('click', function() {
+            const frame = document.getElementById('poster-frame');
+            
+            html2canvas(frame, {
+                useCORS: true, // Tillater eksterne kart-tiles i bildet
+                allowTaint: false,
+                scale: 2 // Høyere oppløsning på bildet
+            }).then(canvas => {
+                const link = document.createElement('a');
+                link.download = 'gpx-kart-utsnitt.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            });
+        });
+    </script>
+</body>
+</html>
