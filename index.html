@@ -183,8 +183,9 @@
             renderer: L.canvas()
         }).setView([69.65, 18.95], 10);
 
-        // CartoDB Dark Matter med API-nøkkel
-        L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?api_key=${API_KEY}`, {
+        // CartoDB Dark Matter med 'key=' parameter
+        // (Bytt ut 'dark_all' med 'voyager' dersom du ønsker lyst kart)
+        L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${API_KEY}`, {
             subdomains: 'abcd',
             maxZoom: 19,
             crossOrigin: 'anonymous'
@@ -206,7 +207,7 @@
             reader.readAsText(file);
         });
 
-        // Haversine-formel for beregning av avstand i kilometer mellom to koordinater
+        // Haversine-formel for å beregne reell avstand (km) mellom to GPS-punkter
         function calculateDistance(lat1, lon1, lat2, lon2) {
             const R = 6371; // Jordens radius i km
             const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -256,7 +257,7 @@
                 return;
             }
 
-            // Beregn kumulativ distanse (km) for hvert punkt
+            // Beregn akkumulert distanse (km) for hvert punkt
             let cumulativeDistance = 0;
             let points = [];
             let latLngs = [];
@@ -359,7 +360,7 @@
             let areaD = "";
 
             validPoints.forEach((pt, index) => {
-                // Skalering langs X-aksen basert på faktiske kilometer i stedet for tidsrekkefølge
+                // X-posisjonen beregnes ut fra distanse i km / total distanse
                 const x = (pt.dist / totalDist) * width;
                 const normY = (pt.ele - minElev) / elevRange;
                 const y = height - (normY * (height - padding * 2) + padding);
