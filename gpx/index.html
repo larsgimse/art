@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimalistisk Spor & Topper</title>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #f5f5f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .controls {
+      margin-bottom: 12px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* Minimalistisk hvit ramme */
+    #card-container {
+      width: 700px;
+      height: 700px;
+      background: #ffffff;
+      border: 2px solid #000000;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      position: relative;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+    }
+
+    /* Skjul alt av standard Leaflet-grafikk */
+    .leaflet-vml-shape, .leaflet-tile-container { display: none !important; }
+    .leaflet-container { background: #ffffff !important; }
+
+    /* Minimalistiske topper og etiketter */
+    .peak-dot {
+      width: 6px;
+      height: 6px;
+      background-color: #000;
+      border-radius: 50%;
+      transform: translate(-3px, -3px);
+    }
+
+    .draggable-label {
+      background: #ffffff;
+      border: 1px solid #000000;
+      padding: 3px 7px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: move;
+      user-select: none;
+      box-shadow: 2px 2px 0px #000;
+    }
+
+    /* Stiplet linje i SVG-overlayet */
+    .connector-line {
+      stroke: #000000;
+      stroke-width: 1;
+      stroke-dasharray: 3, 3;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="controls">
+    <input type="file" id="gpx-input" accept=".gpx">
+    <span style="font-size: 12px; color: #555;">Toleranse for topp-treff: 150m</span>
+  </div>
+
+  <div id="card-container">
+    <div id="map"></div>
+  </div>
+
+  <script>
+    // Fjelldatabase for sjekk av nærliggende topper
+    const DATABASE_TOPPER = [
+      { name: "Store Blåmann", elevation: 1044, lat: 69.7345, lon: 18.5912 },
+      { name: "Bønntuva", elevation: 776, lat: 69.6105, lon: 19.0831 },
+      { name: "Middagstinden", elevation: 1006, lat: 69.5631, lon: 18.2583 }
+    ];
+
+    const MARGIN_METER = 150; // Maks avstand fra spor til topp
+
+    // Initialiser kart uten bakgrunnskart
+    const map = L.map('map', {
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false
+    }).setView([69.65, 18.95], 11);
+
+    // SVG-lag til stiplede linjer
+    const svgOverlay = L.svg({ pane: 'overlayPane' }).addTo(map);
+    const svgElement = svgOverlay._container;
+
+    let trackLayer = null;
+    let connectors = []; // Holder styr på linjene
+
+    // Regn ut avstand i meter mellom to koordinater (Haversine)
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    // Tegn og oppdater stiplede linjer når etikettene flyttes
+    function updateConnectors() {
+      connectors.forEach(conn => {
+        const anchorPos = map.latLngToLayerPoint(conn.anchorLatLng);
+        const labelPos = map.latLngToLayerPoint(conn.marker.getLatLng());
+
+        conn.line.setAttribute('x1', anchorPos.x);
+        conn.line.setAttribute('y1', anchorPos.y);
+        conn.line.setAttribute('x2', labelPos.x);
+        conn.line.setAttribute('y2', labelPos.y);
+      });
+    }
+
+    map.on('move zoom update', updateConnectors);
+
+    function clearPreviousData() {
+      if (trackLayer) map.removeLayer(trackLayer);
+      connectors.forEach(c => c.line.remove());
+      connectors = [];
+      map.eachLayer(layer => {
+        if (layer instanceof L.Marker) map.removeLayer(layer);
+      });
+    }
+
+    function processGeoJSON(geojson) {
+      clearPreviousData();
+
+      // Tegn minimalistisk spor (svart, tynn linje)
+      trackLayer = L.geoJSON(geojson, {
+        style: {
+          color: "#000000",
+          weight: 1.8,
+          opacity: 1
+        }
+      }).addTo(map);
+
+      // Tilpass zoom slik at sporet dekker ca 35% av rammen
+      const bounds = trackLayer.getBounds();
+      map.fitBounds(bounds, { padding: [160, 160] });
+
+      // Hent ut alle punkter i sporet
+      const trackCoords = [];
+      L.geoJSON(geojson, {
+        onEachFeature: (feature) => {
+          if (feature.geometry.type === 'LineString') {
+            feature.geometry.coordinates.forEach(c => trackCoords.push([c[1], c[0]] opacity));
+          } else if (feature.geometry.type === 'MultiLineString') {
+            feature.geometry.coordinates.forEach(line => 
+              line.forEach(c => trackCoords.push([c[1], c[0]]))
+            );
+          }
+        }
+      });
+
+      // Identifiser topper sporet er innom
+      DATABASE_TOPPER.forEach(peak => {
+        let closestPt = null;
+        let minDistance = Infinity;
+
+        trackCoords.forEach(([lat, lon]) => {
+          const dist = getDistanceMeters(lat, lon, peak.lat, peak.lon);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestPt = [lat, lon];
+          }
+        });
+
+        if (minDistance <= MARGIN_METER && closestPt) {
+          addPeakAnnotation(peak, closestPt);
+        }
+      });
+
+      updateConnectors();
+    }
+
+    function addPeakAnnotation(peak, anchorLatLng) {
+      // Fixed prikk på sporet
+      const dotIcon = L.divIcon({ className: 'peak-dot', iconSize: [6, 6] });
+      L.marker(anchorLatLng, { icon: dotIcon, interactive: false }).addTo(map);
+
+      // Dragbar etikett (litt forskjøvet som utgangspunkt)
+      const offsetLat = anchorLatLng[0] + 0.003;
+      const offsetLon = anchorLatLng[1] + 0.005;
+
+      const labelHtml = `<div class="draggable-label">${peak.name} (${peak.elevation} m)</div>`;
+      const labelIcon = L.divIcon({ html: labelHtml, className: '', iconAnchor: [0, 0] });
+
+      const labelMarker = L.marker([offsetLat, offsetLon], {
+        icon: labelIcon,
+        draggable: true
+      }).addTo(map);
+
+      // Lag SVG-linje
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'connector-line');
+      svgElement.appendChild(line);
+
+      const connObj = { anchorLatLng: L.latLng(anchorLatLng), marker: labelMarker, line: line };
+      connectors.push(connObj);
+
+      labelMarker.on('drag', updateConnectors);
+    }
+
+    // Les opplastet GPX-fil
+    document.getElementById('gpx-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dom = new DOMParser().parseFromString(event.target.result, 'text/xml');
+        const geojson = toGeoJSON.gpx(dom);
+        processGeoJSON(geojson);
+      };
+      reader.readAsText(file);
+    });
+  </script>
+</body>
+</html>
