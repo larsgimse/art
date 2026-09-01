@@ -244,6 +244,7 @@
         /* SVG peker styling */
         .peak-marker-container {
             overflow: visible !important;
+            z-index: 1000 !important;
         }
 
         .peak-marker-svg {
@@ -260,10 +261,11 @@
         .peak-marker-text {
             fill: var(--poster-peak-text);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 600;
             letter-spacing: 1px;
             text-transform: uppercase;
+            text-shadow: 0 0 3px rgba(0,0,0,0.8);
         }
 
         .poster-footer {
@@ -410,11 +412,12 @@
     <script>
         const API_KEY = 'cb1_2o3a_1_671194bbedbad28841272141';
 
+        // Flyttet kartutsnitt ved start litt mer mot sør (69.58) for god klaring til overskriften
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false,
             renderer: L.canvas()
-        }).setView([69.65, 18.95], 10);
+        }).setView([69.5800, 18.9500], 10);
 
         L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${API_KEY}`, {
             subdomains: 'abcd',
@@ -447,6 +450,9 @@
                 genererHoydeprofil(currentPoints);
             }
         });
+
+        // Hent fjelltopper ved start og ved hver pan/zoom
+        hentFjelltopper();
 
         map.on('moveend zoomend', () => {
             if (document.getElementById('chk-peaks').checked) {
@@ -634,7 +640,7 @@
 
             const bounds = map.getBounds();
             const center = map.getCenter();
-            const radiusMeters = Math.min(Math.round(center.distanceTo(bounds.getNorthEast())), 50000);
+            const radiusMeters = Math.min(Math.round(center.distanceTo(bounds.getNorthEast())), 40000);
 
             const url = `https://ws.geonorge.no/stedsnavn/v1/punkt?nord=${center.lat}&ost=${center.lng}&radius=${radiusMeters}&navneobjekttype=Fjell&maxAntall=100`;
 
@@ -665,10 +671,12 @@
                 const pos = item.representasjonspunkt || item.posisjon;
                 if (!pos) return;
                 
-                const lat = pos.nord || pos.lat;
-                const lon = pos.ost || pos.lng;
-                const name = item.stedsnavn?.[0]?.skrivemåte || item.navn;
-                const ele = item.stedsnavn?.[0]?.høyde || item.høyde;
+                const lat = pos.nord !== undefined ? pos.nord : pos.lat;
+                const lon = pos.ost !== undefined ? pos.ost : pos.lng;
+                
+                // robust innhenting av navn og høyde fra Geonorge / Kartverket
+                const name = item.stedsnavn?.[0]?.skrivemåte || item.skrivemåte || item.navn;
+                const ele = item.stedsnavn?.[0]?.høyde || item.høyde || item.ele;
 
                 if (lat && lon && name && bounds.contains([lat, lon])) {
                     const nøkkel = `${name.toLowerCase()}_${Math.round(lat*100)}_${Math.round(lon*100)}`;
@@ -682,13 +690,13 @@
                 const labelText = peak.ele ? `${peak.name.toUpperCase()} ${peak.ele}M` : peak.name.toUpperCase();
                 
                 const linePath = showLines ? '<polyline points="0,0 15,-15 25,-15" class="peak-marker-line" />' : '';
-                const textDx = showLines ? 20 : 0;
-                const textDy = showLines ? -12 : -8;
+                const textDx = showLines ? 28 : 0;
+                const textDy = showLines ? -15 : -8;
                 const textAnchor = showLines ? "start" : "middle";
 
                 const svgHtml = `
-                    <svg class="peak-marker-svg" width="220" height="80" viewBox="-110 -40 220 80">
-                        <circle cx="0" cy="0" r="2.5" fill="var(--poster-peak-text)" />
+                    <svg class="peak-marker-svg" width="260" height="80" viewBox="-130 -40 260 80">
+                        <circle cx="0" cy="0" r="3" fill="var(--poster-peak-text)" />
                         ${linePath}
                         <text x="${textDx}" y="${textDy}" class="peak-marker-text" text-anchor="${textAnchor}" dominant-baseline="middle">${labelText}</text>
                     </svg>
