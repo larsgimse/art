@@ -258,17 +258,15 @@
         }
 
         .peak-marker-wrapper {
-            position: relative;
-            width: 0px;
-            height: 0px;
+            position: absolute;
+            transform: translate(-50%, -100%);
+            pointer-events: auto;
         }
 
         .peak-marker-svg {
-            position: absolute;
-            top: -40px;
-            left: -130px;
             overflow: visible;
             cursor: pointer;
+            display: block;
         }
 
         .peak-marker-line {
@@ -713,15 +711,16 @@
                 const isCrossed = crossedPeaksState.has(peak.id);
                 const labelText = peak.ele ? `${peak.name.toUpperCase()} ${peak.ele}M` : peak.name.toUpperCase();
                 
-                const linePath = showLines ? '<polyline points="0,0 15,-15 25,-15" class="peak-marker-line" />' : '';
-                const textDx = showLines ? 28 : 0;
-                const textDy = showLines ? -15 : -8;
+                // SVG bygges med eksplisitte koordinater fra punktet (0,0) og opp/høyre
+                const linePath = showLines ? '<polyline points="0,0 15,-15 35,-15" class="peak-marker-line" />' : '';
+                const textDx = showLines ? 40 : 0;
+                const textDy = showLines ? -15 : -10;
                 const textAnchor = showLines ? "start" : "middle";
 
                 const svgHtml = `
                     <div class="peak-marker-wrapper">
-                        <svg class="peak-marker-svg ${isCrossed ? 'crossed-out' : ''}" width="260" height="80" viewBox="-130 -40 260 80">
-                            <circle cx="0" cy="0" r="3" fill="var(--poster-peak-text)" />
+                        <svg class="peak-marker-svg ${isCrossed ? 'crossed-out' : ''}" width="240" height="60" viewBox="-10 -40 240 60">
+                            <circle cx="0" cy="0" r="3.5" fill="var(--poster-peak-text)" />
                             ${linePath}
                             <text x="${textDx}" y="${textDy}" class="peak-marker-text" text-anchor="${textAnchor}" dominant-baseline="middle">${labelText}</text>
                         </svg>
@@ -839,18 +838,21 @@
                 useCORS: true,
                 allowTaint: false,
                 scale: 2,
+                ignoreElements: (element) => element.classList.contains('leaflet-control-container'),
                 onclone: (clonedDoc) => {
-                    const tilePane = clonedDoc.querySelector('.leaflet-tile-pane');
-                    if (tilePane) {
+                    const clonedMap = clonedDoc.getElementById('map');
+                    const originalTilePane = document.querySelector('.leaflet-tile-pane');
+                    
+                    if (originalTilePane && clonedMap) {
                         const isInv = clonedDoc.getElementById('poster-frame').classList.contains('inverted');
-                        const filterValue = isInv 
+                        const filterVal = isInv 
                             ? 'grayscale(100%) contrast(1.1) brightness(0.95)' 
                             : 'grayscale(100%) invert(100%) contrast(1.2) brightness(0.85)';
 
-                        const tiles = tilePane.querySelectorAll('img');
-                        tiles.forEach(img => {
-                            img.style.filter = filterValue;
-                            img.style.webkitFilter = filterValue;
+                        const clonedTiles = clonedMap.querySelectorAll('.leaflet-tile-pane img');
+                        clonedTiles.forEach(img => {
+                            img.style.filter = filterVal;
+                            img.style.webkitFilter = filterVal;
                         });
                     }
                 }
