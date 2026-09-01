@@ -18,7 +18,7 @@
             --poster-map-bg: #09090b;
             --poster-map-border: #222222;
             --poster-peak-text: #ffffff;
-            --poster-peak-line: rgba(255, 255, 255, 0.7);
+            --poster-peak-line: rgba(255, 255, 255, 0.8);
             --poster-placeholder: #555555;
             --poster-map-filter: grayscale(100%) invert(100%) contrast(1.2) brightness(0.85);
             --accent-color: #4cd964;
@@ -34,7 +34,7 @@
             --poster-map-bg: #e5e5e7;
             --poster-map-border: #dddddd;
             --poster-peak-text: #111111;
-            --poster-peak-line: rgba(0, 0, 0, 0.7);
+            --poster-peak-line: rgba(0, 0, 0, 0.8);
             --poster-placeholder: #888888;
             --poster-map-filter: grayscale(100%) contrast(1.1) brightness(0.95);
         }
@@ -234,55 +234,37 @@
             transition: filter 0.3s ease;
         }
 
-        #loading-bar-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.1);
-            z-index: 1001;
-            display: none;
-        }
-
-        #loading-bar {
-            height: 100%;
-            width: 0%;
-            background: var(--accent-color);
-            transition: width 0.3s ease;
+        /* Sikrer at markør-laget havner på toppen */
+        .leaflet-marker-pane {
+            z-index: 650 !important;
         }
 
         .peak-marker-container {
-            overflow: visible !important;
-            z-index: 1000 !important;
-        }
-
-        .peak-marker-wrapper {
-            position: absolute;
-            transform: translate(-50%, -100%);
-            pointer-events: auto;
+            background: none !important;
+            border: none !important;
         }
 
         .peak-marker-svg {
-            overflow: visible;
+            overflow: visible !important;
             cursor: pointer;
-            display: block;
+            position: absolute;
+            left: 0;
+            top: 0;
         }
 
         .peak-marker-line {
             stroke: var(--poster-peak-line);
-            stroke-width: 1.2px;
-            stroke-dasharray: 2, 2;
+            stroke-width: 1.5px;
+            stroke-dasharray: 3, 3;
         }
 
         .peak-marker-text {
             fill: var(--poster-peak-text);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-size: 10px;
+            font-size: 11px;
             font-weight: 600;
             letter-spacing: 1px;
             text-transform: uppercase;
-            text-shadow: 0 0 3px rgba(0,0,0,0.8);
         }
 
         .peak-marker-svg.crossed-out .peak-marker-text {
@@ -350,6 +332,24 @@
             z-index: 500;
             letter-spacing: 2px;
             transition: color 0.3s ease;
+        }
+
+        #loading-bar-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            z-index: 1001;
+            display: none;
+        }
+
+        #loading-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--accent-color);
+            transition: width 0.3s ease;
         }
     </style>
 </head>
@@ -442,12 +442,12 @@
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false,
-            renderer: L.canvas()
+            preferCanvas: true
         }).setView([69.5800, 18.9500], 10);
 
         L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', {
             maxZoom: 18,
-            crossOrigin: 'anonymous'
+            crossOrigin: true
         }).addTo(map);
 
         let currentPolyline = null;
@@ -711,20 +711,18 @@
                 const isCrossed = crossedPeaksState.has(peak.id);
                 const labelText = peak.ele ? `${peak.name.toUpperCase()} ${peak.ele}M` : peak.name.toUpperCase();
                 
-                // SVG bygges med eksplisitte koordinater fra punktet (0,0) og opp/høyre
-                const linePath = showLines ? '<polyline points="0,0 15,-15 35,-15" class="peak-marker-line" />' : '';
+                // Tegn punktet på posisjon (0,0) i SVG-en, og stiplede linjer opp/høyre
+                const linePath = showLines ? '<path d="M 0,0 L 15,-15 L 35,-15" class="peak-marker-line" fill="none" />' : '';
                 const textDx = showLines ? 40 : 0;
-                const textDy = showLines ? -15 : -10;
+                const textDy = showLines ? -15 : -8;
                 const textAnchor = showLines ? "start" : "middle";
 
                 const svgHtml = `
-                    <div class="peak-marker-wrapper">
-                        <svg class="peak-marker-svg ${isCrossed ? 'crossed-out' : ''}" width="240" height="60" viewBox="-10 -40 240 60">
-                            <circle cx="0" cy="0" r="3.5" fill="var(--poster-peak-text)" />
-                            ${linePath}
-                            <text x="${textDx}" y="${textDy}" class="peak-marker-text" text-anchor="${textAnchor}" dominant-baseline="middle">${labelText}</text>
-                        </svg>
-                    </div>
+                    <svg class="peak-marker-svg ${isCrossed ? 'crossed-out' : ''}" width="300" height="100" viewBox="-50 -50 300 100">
+                        <circle cx="0" cy="0" r="3.5" fill="var(--poster-peak-text)" />
+                        ${linePath}
+                        <text x="${textDx}" y="${textDy}" class="peak-marker-text" text-anchor="${textAnchor}" dominant-baseline="middle">${labelText}</text>
+                    </svg>
                 `;
 
                 const customIcon = L.divIcon({
@@ -833,32 +831,29 @@
         document.getElementById('download-btn').addEventListener('click', function() {
             const frame = document.getElementById('poster-frame');
             showLoading(true);
-            
+
+            // Påfør CSS-filteret direkte på alle kart-flis-bilder før skjermdump tas
+            const isInv = frame.classList.contains('inverted');
+            const filterValue = isInv 
+                ? 'grayscale(100%) contrast(1.1) brightness(0.95)' 
+                : 'grayscale(100%) invert(100%) contrast(1.2) brightness(0.85)';
+
+            const originalTiles = document.querySelectorAll('.leaflet-tile-pane img');
+            originalTiles.forEach(img => {
+                img.setAttribute('crossorigin', 'anonymous');
+                img.style.filter = filterValue;
+                img.style.webkitFilter = filterValue;
+            });
+
             html2canvas(frame, {
                 useCORS: true,
-                allowTaint: false,
+                allowTaint: true,
                 scale: 2,
-                ignoreElements: (element) => element.classList.contains('leaflet-control-container'),
-                onclone: (clonedDoc) => {
-                    const clonedMap = clonedDoc.getElementById('map');
-                    const originalTilePane = document.querySelector('.leaflet-tile-pane');
-                    
-                    if (originalTilePane && clonedMap) {
-                        const isInv = clonedDoc.getElementById('poster-frame').classList.contains('inverted');
-                        const filterVal = isInv 
-                            ? 'grayscale(100%) contrast(1.1) brightness(0.95)' 
-                            : 'grayscale(100%) invert(100%) contrast(1.2) brightness(0.85)';
-
-                        const clonedTiles = clonedMap.querySelectorAll('.leaflet-tile-pane img');
-                        clonedTiles.forEach(img => {
-                            img.style.filter = filterVal;
-                            img.style.webkitFilter = filterVal;
-                        });
-                    }
-                }
+                logging: false,
+                ignoreElements: (element) => element.classList.contains('leaflet-control-container')
             }).then(canvas => {
                 const link = document.createElement('a');
-                link.download = 'gpx-poster-1040x1040.png';
+                link.download = 'gpx-poster.png';
                 link.href = canvas.toDataURL('image/png');
                 link.click();
                 showLoading(false);
