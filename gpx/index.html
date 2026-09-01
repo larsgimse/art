@@ -1,323 +1,447 @@
 <!DOCTYPE html>
 <html lang="no">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Toppturer - Oversiktskart</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <style>
-        :root {
-            --bg-color: #111111;
-            --panel-bg: rgba(26, 26, 26, 0.9);
-            --text-color: #eeeeee;
-            --highlight-orange: #fc4c02;
-            --winter-blue: #0ea5e9;
-            --summer-green: #34a853;
-        }
-        
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: var(--bg-color);
-            color: var(--text-color);
-            height: 100vh;
-            height: 100dvh; 
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimalistisk GPX-visning</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #f0f0f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
 
-        header {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            right: 10px;
-            background: var(--panel-bg);
-            padding: 10px 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border: 1px solid #222;
-            border-radius: 8px;
-            z-index: 1000;
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            min-height: 52px;
-        }
+    .controls {
+      margin-bottom: 15px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
 
-        h1 { 
-            font-size: 1.1rem; 
-            font-weight: 700; 
-            letter-spacing: -0.5px;
-        }
-        
-        .nav-buttons { display: flex; gap: 6px; align-items: center; }
-        
-        .btn {
-            padding: 6px 12px;
-            border-radius: 6px;
-            background: #2a2a2a;
-            color: #fff;
-            border: 1px solid #333;
-            text-decoration: none;
-            font-size: 0.8rem;
-            font-weight: 500;
-            transition: all 0.2s;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-        
-        .btn-reset { background: #222; border-color: #444; color: #ccc; }
-        .btn-export { background: #3b82f6; border-color: #60a5fa; color: #fff; }
-        .btn-winter.active { background: var(--winter-blue); border-color: #fff; font-weight: 700; }
-        .btn-summer.active { background: var(--summer-green); border-color: #fff; font-weight: 700; }
+    #status {
+      font-weight: 500;
+      color: #444;
+    }
 
-        #map-container {
-            flex: 1;
-            width: 100%;
-            height: 100%;
-            position: relative;
-        }
+    /* Minimalistisk hvit ramme */
+    #frame {
+      width: 650px;
+      height: 650px;
+      background: #ffffff;
+      border: 2px solid #000000;
+      position: relative;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+      overflow: hidden;
+    }
 
-        #map {
-            width: 100%;
-            height: 100%;
-            background: var(--bg-color);
-        }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
 
-        /* Tinn-liste panel */
-        #peak-list-panel {
-            position: absolute;
-            top: 70px;
-            right: 10px;
-            width: 260px;
-            max-height: calc(100vh - 100px);
-            background: var(--panel-bg);
-            border: 1px solid #333;
-            border-radius: 8px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-        }
+    /* Interaktive etiketter uten boksdesign */
+    .label-container {
+      position: absolute;
+      z-index: 10;
+      cursor: move;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: transparent;
+      padding: 2px 4px;
+    }
 
-        .panel-header {
-            padding: 10px;
-            font-weight: bold;
-            font-size: 0.85rem;
-            border-bottom: 1px solid #333;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+    .draggable-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      color: #000000;
+      text-transform: uppercase;
+    }
 
-        .peak-list {
-            overflow-y: auto;
-            max-height: 400px;
-            list-style: none;
-        }
+    .delete-btn {
+      display: none;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      color: #ff0000;
+      line-height: 1;
+      padding: 0 2px;
+    }
 
-        .peak-item {
-            padding: 8px 10px;
-            font-size: 0.8rem;
-            border-bottom: 1px solid #222;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .peak-item:last-child { border-bottom: none; }
-
-        .delete-btn {
-            background: transparent;
-            border: none;
-            color: #ef4444;
-            font-size: 1.1rem;
-            cursor: pointer;
-            padding: 0 4px;
-            line-height: 1;
-        }
-        .delete-btn:hover { color: #ff6b6b; }
-
-        /* Stil for ren navnelapp uten bakgrunn */
-        .clean-peak-label {
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            font-weight: 800;
-            font-size: 13px;
-            color: #ffffff;
-            text-shadow: 1px 1px 3px #000, -1px -1px 3px #000, 1px -1px 3px #000, -1px 1px 3px #000;
-            cursor: move;
-            white-space: nowrap;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
-        }
-        .clean-peak-label::before { display: none !important; }
-
-        .overlay-svg {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            z-index: 500;
-        }
-
-        @media (max-width: 600px) {
-            header { top: auto; bottom: 20px; flex-direction: column; gap: 8px; }
-            #peak-list-panel { top: 10px; right: 10px; width: 200px; }
-        }
-    </style>
+    .label-container:hover .delete-btn {
+      display: inline-block;
+    }
+  </style>
 </head>
 <body>
 
-    <header>
-        <h1>Toppturer</h1>
-        <div class="nav-buttons">
-            <button id="btn-reset" class="btn btn-reset">🔄 Nullstill</button>
-            <button id="btn-vinter" class="btn btn-winter">❄️ Vinter</button>
-            <button id="btn-sommer" class="btn btn-summer">☀️ Sommer</button>
-            <button id="btn-export" class="btn btn-export">📸 Bilde</button>
-        </div>
-    </header>
+  <div class="controls">
+    <input type="file" id="gpx-input" accept=".gpx">
+    <span id="status">Last opp en GPX-fil</span>
+  </div>
 
-    <div id="peak-list-panel">
-        <div class="panel-header">
-            <span>Topper på kartet</span>
-            <span id="peak-count" style="color:#888;">0</span>
-        </div>
-        <ul id="peak-list" class="peak-list"></ul>
-    </div>
+  <div id="frame">
+    <canvas id="trackCanvas" width="650" height="650"></canvas>
+    <div id="labels-layer"></div>
+  </div>
 
-    <div id="map-container">
-        <div id="map"></div>
-        <svg id="svg-lines" class="overlay-svg"></svg>
-    </div>
+  <script>
+    const canvas = document.getElementById('trackCanvas');
+    const ctx = canvas.getContext('2d');
+    const frame = document.getElementById('frame');
+    const labelsLayer = document.getElementById('labels-layer');
+    const statusEl = document.getElementById('status');
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-gpx/1.7.0/gpx.min.js"></script>
+    let trackPoints = []; 
+    let detectedPeaks = []; 
 
-    <script>
-        const map = L.map('map', { zoomControl: true }).setView([69.65, 18.95], 9);
+    document.getElementById('gpx-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=cb1_2o3a_1_671194bbedbad28841272141', {
-            attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20,
-            crossOrigin: true
-        }).addTo(map);
+      statusEl.textContent = "Leser GPX-fil...";
 
-        const svg = document.getElementById('svg-lines');
-        let peaksData = [];
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        parseGPX(event.target.result);
+      };
+      reader.readAsText(file);
+    });
 
-        async function lastToppData() {
-            // Eksempel-data
-            const mockTopper = [
-                { id: '1', navn: 'BUREN', hoyde: '802m', lat: 69.62, lon: 18.80, type: 'vinter' },
-                { id: '2', navn: 'STORE BLÅMANN', hoyde: '1044m', lat: 69.73, lon: 18.59, type: 'sommer' },
-                { id: '3', navn: 'MUSA', hoyde: '1025m', lat: 69.58, lon: 19.10, type: 'vinter' }
-            ];
+    function parseGPX(xmlText) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(xmlText, "text/xml");
+      const trkpts = xml.querySelectorAll("trkpt");
 
-            peaksData = mockTopper;
-            oppdaterTopper();
+      trackPoints = [];
+      trkpts.forEach(pt => {
+        trackPoints.push({
+          lat: parseFloat(pt.getAttribute("lat")),
+          lon: parseFloat(pt.getAttribute("lon"))
+        });
+      });
+
+      if (trackPoints.length > 0) {
+        statusEl.textContent = "Søker etter topper i kartdata...";
+        fetchPeaks();
+      } else {
+        statusEl.textContent = "Ingen gyldige spor-punkter funnet i GPX.";
+      }
+    }
+
+    async function fetchPeaks() {
+      let minLat = Infinity, maxLat = -Infinity;
+      let minLon = Infinity, maxLon = -Infinity;
+
+      trackPoints.forEach(p => {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lon < minLon) minLon = p.lon;
+        if (p.lon > maxLon) maxLon = p.lon;
+      });
+
+      const buffer = 0.025;
+      const bMinLat = minLat - buffer;
+      const bMaxLat = maxLat + buffer;
+      const bMinLon = minLon - buffer;
+      const bMaxLon = maxLon + buffer;
+
+      let peaks = [];
+
+      try {
+        const url = `https://ws.geonorge.no/stedsnavn/v1/punkt?nordmin=${bMinLat}&nordmaks=${bMaxLat}&ostmin=${bMinLon}&ostmaks=${bMaxLon}&navneobjekttype=Fjell*&maxAntall=100`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const json = await res.json();
+          peaks = parseKartverketGeonorge(json);
+        }
+      } catch (err) {
+        console.warn("Kartverket API feilet, prøver Overpass fallback...", err);
+      }
+
+      if (peaks.length === 0) {
+        try {
+          const overpassQuery = `[out:json];node["natural"="peak"](${bMinLat},${bMinLon},${bMaxLat},${bMaxLon});out;`;
+          const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`);
+          if (res.ok) {
+            const json = await res.json();
+            peaks = parseOverpass(json);
+          }
+        } catch (err) {
+          console.error("Overpass API feilet:", err);
+        }
+      }
+
+      statusEl.textContent = `Identifiserte ${peaks.length} potensielle topper. Genererer visning...`;
+      render(peaks);
+    }
+
+    function parseKartverketGeonorge(data) {
+      if (!data || !data.navn) return [];
+      const peaks = [];
+      data.navn.forEach(item => {
+        const name = item.stedsnavn?.[0]?.skrivemåte || item.stedsnavn;
+        const lat = item.representasjonspunkt?.nord;
+        const lon = item.representasjonspunkt?.øst;
+        const height = item.meterOverHavet || item.stedsnavn?.[0]?.meterOverHavet;
+
+        if (name && lat && lon) {
+          peaks.push({ name, lat, lon, elevation: height });
+        }
+      });
+      return peaks;
+    }
+
+    function parseOverpass(data) {
+      if (!data || !data.elements) return [];
+      return data.elements.map(el => ({
+        name: el.tags?.name || "Ukjent topp",
+        lat: el.lat,
+        lon: el.lon,
+        elevation: el.tags?.ele ? parseInt(el.tags.ele) : null
+      }));
+    }
+
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function render(apiPeaks) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      labelsLayer.innerHTML = '';
+      detectedPeaks = [];
+
+      let minLat = Infinity, maxLat = -Infinity;
+      let minLon = Infinity, maxLon = -Infinity;
+
+      trackPoints.forEach(p => {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lon < minLon) minLon = p.lon;
+        if (p.lon > maxLon) maxLon = p.lon;
+      });
+
+      const latSpan = maxLat - minLat || 0.005;
+      const lonSpan = maxLon - minLon || 0.005;
+
+      const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+      const adjustedLonSpan = lonSpan * cosLat;
+      const maxSpan = Math.max(latSpan, adjustedLonSpan);
+      
+      const scale = (canvas.width * 0.62) / maxSpan;
+
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLon = (minLon + maxLon) / 2;
+
+      function toCanvasCoords(lat, lon) {
+        return {
+          x: canvas.width / 2 + (lon - centerLon) * cosLat * scale,
+          y: canvas.height / 2 - (lat - centerLat) * scale
+        };
+      }
+
+      ctx.beginPath();
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 1.8;
+
+      trackPoints.forEach((p, index) => {
+        const pt = toCanvasCoords(p.lat, p.lon);
+        if (index === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+
+      const MARGIN_METER = 500;
+      const addedNames = new Set();
+
+      apiPeaks.forEach(peak => {
+        if (addedNames.has(peak.name)) return;
+
+        let closestPt = null;
+        let minDistance = Infinity;
+
+        const step = Math.max(1, Math.floor(trackPoints.length / 400));
+        for (let i = 0; i < trackPoints.length; i += step) {
+          const p = trackPoints[i];
+          const dist = getDistanceMeters(p.lat, p.lon, peak.lat, peak.lon);
+          if (dist < minDistance) {
+            minDistance = dist;
+            closestPt = p;
+          }
         }
 
-        function oppdaterTopper() {
-            // Fjern eksisterende markører/linjer
-            map.eachLayer(layer => {
-                if (layer instanceof L.Marker) map.removeLayer(layer);
-            });
-            svg.innerHTML = '';
-            
-            const listEl = document.getElementById('peak-list');
-            listEl.innerHTML = '';
-            document.getElementById('peak-count').textContent = peaksData.length;
-
-            peaksData.forEach((topp) => {
-                // Legg til i listen
-                const li = document.createElement('li');
-                li.className = 'peak-item';
-                li.innerHTML = `
-                    <span>${topp.navn} (${topp.hoyde})</span>
-                    <button class="delete-btn" title="Fjern topp" onclick="fjernTopp('${topp.id}')">&times;</button>
-                `;
-                listEl.appendChild(li);
-
-                // Opprett kartelementer
-                opprettToppElementer(topp);
-            });
+        if (minDistance <= MARGIN_METER && closestPt) {
+          addedNames.add(peak.name);
+          const anchor = toCanvasCoords(closestPt.lat, closestPt.lon);
+          createPeakAnnotation(peak, anchor);
         }
+      });
 
-        function fjernTopp(id) {
-            peaksData = peaksData.filter(t => t.id !== id);
-            oppdaterTopper();
-        }
+      redrawCanvasAndLines();
+    }
 
-        function opprettToppElementer(topp) {
-            const toppLatLng = L.latLng(topp.lat, topp.lon);
+    function createPeakAnnotation(peak, anchor) {
+      const labelContainer = document.createElement('div');
+      labelContainer.className = 'label-container';
+      
+      const heightText = peak.elevation ? ` ${peak.elevation}m` : '';
+      const formattedName = `${peak.name.toUpperCase()}${heightText}`;
 
-            // Selve toppunkt-merket (Lite usynlig/lite merke på fjellet)
-            const targetMarker = L.circleMarker(toppLatLng, {
-                radius: 3,
-                color: '#ffffff',
-                fillColor: '#ffffff',
-                fillOpacity: 1
-            }).addTo(map);
+      labelContainer.innerHTML = `
+        <span class="draggable-label">${formattedName}</span>
+        <span class="delete-btn" title="Fjern topp">×</span>
+      `;
 
-            // Flyttbar tekst-lapp
-            const labelText = `${topp.navn} ${topp.hoyde}`;
-            const labelIcon = L.divIcon({
-                className: 'clean-peak-label',
-                html: labelText,
-                iconAnchor: [-10, 10]
-            });
+      let initialX = anchor.x + 35;
+      let initialY = anchor.y - 25;
 
-            const labelMarker = L.marker(toppLatLng, {
-                icon: labelIcon,
-                draggable: true
-            }).addTo(map);
+      labelContainer.style.left = `${initialX}px`;
+      labelContainer.style.top = `${initialY}px`;
 
-            // Vinklet stiplet pekelinje (SVG)
-            const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-            polyline.setAttribute("stroke", "#ffffff");
-            polyline.setAttribute("stroke-width", "1.5");
-            polyline.setAttribute("stroke-dasharray", "4 3");
-            polyline.setAttribute("fill", "none");
-            svg.appendChild(polyline);
+      labelsLayer.appendChild(labelContainer);
 
-            function tegnVinkletLinje() {
-                const targetPoint = map.latLngToContainerPoint(toppLatLng);
-                let labelPoint = map.latLngToContainerPoint(labelMarker.getLatLng());
+      const peakData = {
+        id: Date.now() + Math.random(),
+        anchorX: anchor.x,
+        anchorY: anchor.y,
+        labelX: initialX,
+        labelY: initialY,
+        element: labelContainer
+      };
 
-                // Begrens navnelappen til å holde seg innenfor kartets visning
-                const mapSize = map.getSize();
-                const padding = 20;
-                let clampedX = Math.max(padding, Math.min(mapSize.x - padding, labelPoint.x));
-                let clampedY = Math.max(padding, Math.min(mapSize.y - padding, labelPoint.y));
+      // Håndter sletting
+      const deleteBtn = labelContainer.querySelector('.delete-btn');
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        labelContainer.remove();
+        detectedPeaks = detectedPeaks.filter(p => p.id !== peakData.id);
+        redrawCanvasAndLines();
+      });
 
-                if (clampedX !== labelPoint.x || clampedY !== labelPoint.y) {
-                    labelPoint = L.point(clampedX, clampedY);
-                    const newLatLng = map.containerPointToLatLng(labelPoint);
-                    labelMarker.setLatLng(newLatLng);
-                }
+      detectedPeaks.push(peakData);
+      makeDraggable(labelContainer, peakData);
+    }
 
-                // Kneepoint for vinklet linje (L-form/kneledd)
-                const kneeX = targetPoint.x;
-                const kneeY = labelPoint.y;
+    function makeDraggable(element, data) {
+      let isDragging = false;
+      let startMouseX = 0;
+      let startMouseY = 0;
+      let startElemX = 0;
+      let startElemY = 0;
 
-                polyline.setAttribute("points", `${targetPoint.x},${targetPoint.y} ${kneeX},${kneeY} ${labelPoint.x},${labelPoint.y}`);
-            }
+      element.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('delete-btn')) return;
+        
+        isDragging = true;
+        startMouseX = e.clientX;
+        startMouseY = e.clientY;
+        startElemX = data.labelX;
+        startElemY = data.labelY;
+        
+        e.stopPropagation();
+        e.preventDefault();
+      });
 
-            labelMarker.on('drag', tegnVinkletLinje);
-            map.on('move zoomEnd', tegnVinkletLinje);
-            tegnVinkletLinje();
-        }
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        
+        const dx = e.clientX - startMouseX;
+        const dy = e.clientY - startMouseY;
 
-        lastToppData();
-    </script>
+        let newX = startElemX + dx;
+        let newY = startElemY + dy;
+
+        element.style.left = `${newX}px`;
+        element.style.top = `${newY}px`;
+
+        data.labelX = newX;
+        data.labelY = newY;
+
+        redrawCanvasAndLines();
+      });
+
+      window.addEventListener('mouseup', () => {
+        isDragging = false;
+      });
+    }
+
+    function redrawCanvasAndLines() {
+      let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+      trackPoints.forEach(p => {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lon < minLon) minLon = p.lon;
+        if (p.lon > maxLon) maxLon = p.lon;
+      });
+
+      const latSpan = maxLat - minLat || 0.005;
+      const lonSpan = maxLon - minLon || 0.005;
+      const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+      const maxSpan = Math.max(latSpan, lonSpan * cosLat);
+      const scale = (canvas.width * 0.62) / maxSpan;
+      const centerLat = (minLat + maxLat) / 2;
+      const centerLon = (minLon + maxLon) / 2;
+
+      function toCanvasCoords(lat, lon) {
+        return {
+          x: canvas.width / 2 + (lon - centerLon) * cosLat * scale,
+          y: canvas.height / 2 - (lat - centerLat) * scale
+        };
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Tegn sporet
+      ctx.beginPath();
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 1.8;
+      trackPoints.forEach((p, index) => {
+        const pt = toCanvasCoords(p.lat, p.lon);
+        if (index === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      });
+      ctx.stroke();
+
+      // Prikker og vinklede stiplede linjer
+      detectedPeaks.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.anchorX, p.anchorY, 3, 0, Math.PI * 2);
+        ctx.fillStyle = "#000000";
+        ctx.fill();
+
+        const labelHeight = p.element.offsetHeight || 15;
+        const targetX = p.labelX;
+        const targetY = p.labelY + (labelHeight / 2);
+
+        // Tegn stiplet linje i 90-graders vinkel (først horisontalt, så vertikalt)
+        ctx.beginPath();
+        ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = "#000000";
+        ctx.lineWidth = 1;
+        ctx.moveTo(p.anchorX, p.anchorY);
+        ctx.lineTo(targetX, p.anchorY);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+  </script>
 </body>
 </html>
