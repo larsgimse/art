@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minimalistisk GPX-Visning</title>
+  <title>Minimalistisk GPX-visning med Kartverket API</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -18,6 +18,14 @@
     .controls {
       margin-bottom: 15px;
       font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    #status {
+      font-weight: 500;
+      color: #444;
     }
 
     /* Minimalistisk hvit ramme */
@@ -63,6 +71,7 @@
 
   <div class="controls">
     <input type="file" id="gpx-input" accept=".gpx">
+    <span id="status">Last opp en GPX-fil</span>
   </div>
 
   <div id="frame">
@@ -71,38 +80,21 @@
   </div>
 
   <script>
-    // Enkel fjelldatabase (legg til flere koord/fjell etter ønske)
-    const DATABASE_TOPPER = [
-      { name: "Store Blåmann", elevation: 1044, lat: 69.7345, lon: 18.5912 },
-      { name: "Bønntuva", elevation: 776, lat: 69.6105, lon: 19.0831 },
-      { name: "Middagstinden", elevation: 1006, lat: 69.5631, lon: 18.2583 },
-      { name: "Tromsdalstinden", elevation: 1238, lat: 69.6081, lon: 19.1378 }
-    ];
-
-    const MARGIN_METER = 200; // Toleranseavstand fra spor til topp
-
     const canvas = document.getElementById('trackCanvas');
     const ctx = canvas.getContext('2d');
     const frame = document.getElementById('frame');
     const labelsLayer = document.getElementById('labels-layer');
+    const statusEl = document.getElementById('status');
 
-    let trackPoints = []; // [{lat, lon}]
-    let detectedPeaks = []; // [{peak, canvasAnchorX, canvasAnchorY, labelX, labelY, element}]
+    let trackPoints = []; 
+    let detectedPeaks = []; 
 
-    // Havversine avstandsberegning (i meter)
-    function getDistanceMeters(lat1, lon1, lat2, lon2) {
-      const R = 6371000;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
-
-    // Les GPX direkte via DOMParser i nettleseren
+    // Les GPX direkte i nettleserens minne
     document.getElementById('gpx-input').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
+
+      statusEl.textContent = "Leser fil...";
 
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -125,16 +117,15 @@
       });
 
       if (trackPoints.length > 0) {
-        render();
+        statusEl.textContent = "Søker etter topper hos Kartverket...";
+        fetchPeaksFromKartverket();
+      } else {
+        statusEl.textContent = "Ingen gyldige spor-punkter funnet i GPX.";
       }
     }
 
-    function render() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      labelsLayer.innerHTML = '';
-      detectedPeaks = [];
-
-      // 1. Finn min/maks for transformering
+    // Hent topper fra Kartverket Stedsnavn-API basert på GPX-grensene
+    async function fetchPeaksFromKartverket() {
       let minLat = Infinity, maxLat = -Infinity;
       let minLon = Infinity, maxLon = -Infinity;
 
@@ -145,33 +136,91 @@
         if (p.lon > maxLon) maxLon = p.lon;
       });
 
-      // 2. Skaler slik at sporet dekker ca 35% av rammen (65% margin)
-      const latSpan = maxLat - minLat || 0.01;
-      const lonSpan = maxLon - minLon || 0.01;
+      // Legg på en liten margin rundt sporet for BoundingBox-søk (ca. 1-2 km)
+      const bbox = `${minLon - 0.02},${minLat - 0.01},${maxLon + 0.02},${maxLat + 0.01}`;
+      const apiUrl = `https://api.kartverket.no/stedsnavn/v1/navn?bbox=${bbox}&navneobjekttype=Fjell&maksAntall=50`;
 
-      // Korriger for breddegrad for å unngå forvrengning
+      try {
+        const response = await fetch(apiUrl);
+        const data = await response.json();
+        
+        const peaks = parseKartverketResponse(data);
+        statusEl.textContent = `Fant ${peaks.length} topper i nærområdet. Renderer...`;
+        render(peaks);
+      } catch (err) {
+        console.error("Kartverket API-feil:", err);
+        statusEl.textContent = "Kunne ikke hente topper fra Kartverket. Viser kun spor.";
+        render([]);
+      }
+    }
+
+    function parseKartverketResponse(data) {
+      if (!data || !data.navn) return [];
+      
+      const foundPeaks = [];
+      data.navn.forEach(item => {
+        const name = item.stedsnavn[0]?.skrivemåte || item.represterendePunkt?.stedsnavn;
+        const lat = item.representasjonspunkt?.nord;
+        const lon = item.representasjonspunkt?.øst;
+        const height = item.meterOverHavet || null;
+
+        if (name && lat && lon) {
+          foundPeaks.push({ name, lat, lon, elevation: height });
+        }
+      });
+      return foundPeaks;
+    }
+
+    // Haversine-formel for avstand i meter
+    function getDistanceMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function render(apiPeaks) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      labelsLayer.innerHTML = '';
+      detectedPeaks = [];
+
+      // 1. Finn min/maks
+      let minLat = Infinity, maxLat = -Infinity;
+      let minLon = Infinity, maxLon = -Infinity;
+
+      trackPoints.forEach(p => {
+        if (p.lat < minLat) minLat = p.lat;
+        if (p.lat > maxLat) maxLat = p.lat;
+        if (p.lon < minLon) minLon = p.lon;
+        if (p.lon > maxLon) maxLon = p.lon;
+      });
+
+      const latSpan = maxLat - minLat || 0.005;
+      const lonSpan = maxLon - minLon || 0.005;
+
       const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
       const adjustedLonSpan = lonSpan * cosLat;
-
       const maxSpan = Math.max(latSpan, adjustedLonSpan);
       
-      // 35% dekning betyr at skaleringsfaktoren beregnes ut fra 35% av lerretsstørrelsen
-      const scale = (canvas.width * 0.35) / maxSpan;
+      // Økt skaleringen til 60% av rammen (større spor)
+      const scale = (canvas.width * 0.60) / maxSpan;
 
       const centerLat = (minLat + maxLat) / 2;
       const centerLon = (minLon + maxLon) / 2;
 
-      // Transformasjonsfunksjon fra (lat, lon) til canvas (x, y)
       function toCanvasCoords(lat, lon) {
-        const x = canvas.width / 2 + (lon - centerLon) * cosLat * scale;
-        const y = canvas.height / 2 - (lat - centerLat) * scale;
-        return { x, y };
+        return {
+          x: canvas.width / 2 + (lon - centerLon) * cosLat * scale,
+          y: canvas.height / 2 - (lat - centerLat) * scale
+        };
       }
 
-      // 3. Tegn sporet
+      // 2. Tegn sporet
       ctx.beginPath();
       ctx.strokeStyle = "#000000";
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.8;
 
       trackPoints.forEach((p, index) => {
         const pt = toCanvasCoords(p.lat, p.lon);
@@ -180,18 +229,23 @@
       });
       ctx.stroke();
 
-      // 4. Finn og noter topper innenfor marginen
-      DATABASE_TOPPER.forEach(peak => {
+      // 3. Sjekk hvilke Kartverket-topper sporet passerer (innenfor 300m)
+      const MARGIN_METER = 300; 
+
+      apiPeaks.forEach(peak => {
         let closestPt = null;
         let minDistance = Infinity;
 
-        trackPoints.forEach(p => {
+        // Tynner ut sjekkpunkter for ytelse
+        const step = Math.max(1, Math.floor(trackPoints.length / 300));
+        for (let i = 0; i < trackPoints.length; i += step) {
+          const p = trackPoints[i];
           const dist = getDistanceMeters(p.lat, p.lon, peak.lat, peak.lon);
           if (dist < minDistance) {
             minDistance = dist;
             closestPt = p;
           }
-        });
+        }
 
         if (minDistance <= MARGIN_METER && closestPt) {
           const anchor = toCanvasCoords(closestPt.lat, closestPt.lon);
@@ -199,24 +253,18 @@
         }
       });
 
-      drawConnectors();
+      redrawCanvasAndLines();
     }
 
     function createPeakAnnotation(peak, anchor) {
-      // Tegn festeprikken på sporet
-      ctx.beginPath();
-      ctx.arc(anchor.x, anchor.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "#000000";
-      ctx.fill();
-
-      // Lag dragbar HTML-etikett
       const labelDiv = document.createElement('div');
       labelDiv.className = 'label-container';
-      labelDiv.innerHTML = `<div class="draggable-label">${peak.name} (${peak.elevation} m)</div>`;
+      
+      const heightText = peak.elevation ? ` (${peak.elevation} m)` : '';
+      labelDiv.innerHTML = `<div class="draggable-label">${peak.name}${heightText}</div>`;
 
-      // Startposisjon (forskjøvet litt opp til høyre)
-      let initialX = anchor.x + 40;
-      let initialY = anchor.y - 30;
+      let initialX = anchor.x + 30;
+      let initialY = anchor.y - 25;
 
       labelDiv.style.left = `${initialX}px`;
       labelDiv.style.top = `${initialY}px`;
@@ -232,8 +280,6 @@
       };
 
       detectedPeaks.push(peakData);
-
-      // Gjør etiketten dragbar med mus/touch
       makeDraggable(labelDiv, peakData);
     }
 
@@ -270,10 +316,7 @@
     }
 
     function redrawCanvasAndLines() {
-      // Re-tegn kun sporet og festeprikkene + stiplede linjer
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Re-tegn spor
+      // Re-tegn kun stiplede linjer og festeprikker
       let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
       trackPoints.forEach(p => {
         if (p.lat < minLat) minLat = p.lat;
@@ -281,9 +324,12 @@
         if (p.lon < minLon) minLon = p.lon;
         if (p.lon > maxLon) maxLon = p.lon;
       });
+
+      const latSpan = maxLat - minLat || 0.005;
+      const lonSpan = maxLon - minLon || 0.005;
       const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
-      const maxSpan = Math.max(maxLat - minLat || 0.01, (maxLon - minLon || 0.01) * cosLat);
-      const scale = (canvas.width * 0.35) / maxSpan;
+      const maxSpan = Math.max(latSpan, lonSpan * cosLat);
+      const scale = (canvas.width * 0.60) / maxSpan;
       const centerLat = (minLat + maxLat) / 2;
       const centerLon = (minLon + maxLon) / 2;
 
@@ -294,9 +340,12 @@
         };
       }
 
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Spor
       ctx.beginPath();
       ctx.strokeStyle = "#000000";
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.8;
       trackPoints.forEach((p, index) => {
         const pt = toCanvasCoords(p.lat, p.lon);
         if (index === 0) ctx.moveTo(pt.x, pt.y);
@@ -304,14 +353,13 @@
       });
       ctx.stroke();
 
-      // Tegn prikker og stiplede linjer
+      // Prikker og stiplede linjer
       detectedPeaks.forEach(p => {
         ctx.beginPath();
-        ctx.arc(p.anchorX, p.anchorY, 3, 0, Math.PI * 2);
+        ctx.arc(p.anchorX, p.anchorY, 3.5, 0, Math.PI * 2);
         ctx.fillStyle = "#000000";
         ctx.fill();
 
-        // Stiplet linje til etikettens midtpunkt
         const labelRect = p.element.getBoundingClientRect();
         const targetX = p.labelX;
         const targetY = p.labelY + (labelRect.height / 2);
@@ -323,12 +371,8 @@
         ctx.moveTo(p.anchorX, p.anchorY);
         ctx.lineTo(targetX, targetY);
         ctx.stroke();
-        ctx.setLineDash([]); // Tilbakestill
+        ctx.setLineDash([]);
       });
-    }
-
-    function drawConnectors() {
-      redrawCanvasAndLines();
     }
   </script>
 </body>
