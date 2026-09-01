@@ -16,20 +16,6 @@
             --subtext-color: #888888;
             --accent-color: #4cd964;
 
-            --poster-bg: #f5f5f7;
-            --poster-border: #111111;
-            --poster-text-main: #111111;
-            --poster-text-sub: #666666;
-            --poster-text-coord: #444444;
-            --poster-text-stats: #222222;
-            --poster-map-bg: #e5e5e7;
-            --poster-map-border: #dddddd;
-            --poster-track: #111111;
-            --poster-peak-text: #111111;
-            --poster-peak-line: rgba(0, 0, 0, 0.7);
-        }
-
-        #poster-frame.dark-theme {
             --poster-bg: #111111;
             --poster-border: #ffffff;
             --poster-text-main: #ffffff;
@@ -41,6 +27,24 @@
             --poster-track: #ffffff;
             --poster-peak-text: #ffffff;
             --poster-peak-line: rgba(255, 255, 255, 0.7);
+            --poster-placeholder: #555555;
+            --poster-map-filter: none;
+        }
+
+        #poster-frame.inverted {
+            --poster-bg: #f5f5f7;
+            --poster-border: #111111;
+            --poster-text-main: #111111;
+            --poster-text-sub: #666666;
+            --poster-text-coord: #444444;
+            --poster-text-stats: #222222;
+            --poster-map-bg: #e5e5e7;
+            --poster-map-border: #dddddd;
+            --poster-track: #111111;
+            --poster-peak-text: #111111;
+            --poster-peak-line: rgba(0, 0, 0, 0.7);
+            --poster-placeholder: #888888;
+            --poster-map-filter: invert(100%) hue-rotate(180deg) brightness(0.95) contrast(1.05);
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -232,93 +236,34 @@
             background: var(--poster-map-bg);
         }
 
-        .zoom-controls {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
+        #poster-frame.inverted .leaflet-tile-pane {
+            filter: var(--poster-map-filter);
+            transition: filter 0.3s ease;
         }
 
-        .zoom-btn {
-            width: 36px;
-            height: 36px;
-            background: rgba(22, 22, 24, 0.85);
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 6px;
-            font-size: 1.2rem;
-            font-weight: bold;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            backdrop-filter: blur(4px);
-            transition: all 0.2s ease;
+        /* SVG peker styling */
+        .peak-marker-container {
+            overflow: visible !important;
         }
 
-        .zoom-btn:hover {
-            background: rgba(40, 40, 45, 0.95);
-            border-color: rgba(255, 255, 255, 0.4);
+        .peak-marker-svg {
+            overflow: visible;
+            pointer-events: none;
         }
 
-        .peak-label-container {
-            background: none !important;
-            border: none !important;
+        .peak-marker-line {
+            stroke: var(--poster-peak-line);
+            stroke-width: 1.2px;
+            stroke-dasharray: 2, 2;
         }
 
-        .peak-label-text {
-            color: var(--poster-peak-text);
+        .peak-marker-text {
+            fill: var(--poster-peak-text);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             font-size: 9px;
             font-weight: 600;
             letter-spacing: 1px;
             text-transform: uppercase;
-            white-space: nowrap;
-            cursor: move;
-            user-select: none;
-            background: rgba(255, 255, 255, 0.85);
-            padding: 3px 6px;
-            border-radius: 4px;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            border: 1px solid rgba(0, 0, 0, 0.2);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        #poster-frame.dark-theme .peak-label-text {
-            background: rgba(0, 0, 0, 0.65);
-            border-color: rgba(255, 255, 255, 0.2);
-            box-shadow: none;
-        }
-
-        .peak-remove-btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(220, 38, 38, 0.85);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 14px;
-            height: 14px;
-            font-size: 10px;
-            font-weight: bold;
-            cursor: pointer;
-            line-height: 1;
-            transition: background 0.15s ease;
-        }
-
-        .peak-remove-btn:hover {
-            background: rgba(239, 68, 68, 1);
-        }
-
-        .rendering-canvas .peak-remove-btn,
-        .rendering-canvas .zoom-controls {
-            display: none !important;
         }
 
         .poster-footer {
@@ -351,7 +296,7 @@
         }
 
         #elevation-profile {
-            width: 45%;
+            width: 70%;
             height: 60px;
             display: flex;
             justify-content: center;
@@ -369,7 +314,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            color: var(--poster-text-sub);
+            color: var(--poster-placeholder);
             font-size: 1.4rem;
             pointer-events: none;
             z-index: 500;
@@ -384,9 +329,8 @@
         <label for="gpx-input" class="btn btn-primary">📁 Velg GPX-fil</label>
         <input type="file" id="gpx-input" accept=".gpx">
         
-        <button id="invert-btn" class="btn">🔄 Bytt tema (Mørk/Lys)</button>
+        <button id="invert-btn" class="btn">🔄 Bytt til lyst tema</button>
         <button id="open-menu-btn" class="btn">⚙️ Visningselementer</button>
-        <button id="reset-peaks-btn" class="btn">⛰️ Tilbakestill topper</button>
         <button id="download-btn" class="btn" style="display: none;">📥 Last ned bilde</button>
     </div>
 
@@ -398,16 +342,16 @@
             </h3>
             <div class="toggle-list">
                 <div class="toggle-item">
-                    <span>🔍 Zoom-knapper</span>
+                    <span>⛰️ Fjelltopper</span>
                     <label class="switch">
-                        <input type="checkbox" id="chk-zoom" checked>
+                        <input type="checkbox" id="chk-peaks" checked>
                         <span class="slider"></span>
                     </label>
                 </div>
                 <div class="toggle-item">
-                    <span>⛰️ Fjelltopper</span>
+                    <span>📏 Stiplede pekere</span>
                     <label class="switch">
-                        <input type="checkbox" id="chk-peaks" checked>
+                        <input type="checkbox" id="chk-peak-lines" checked>
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -450,10 +394,6 @@
         </div>
 
         <div id="map-wrapper">
-            <div class="zoom-controls" id="zoom-controls">
-                <button class="zoom-btn" id="zoom-in">+</button>
-                <button class="zoom-btn" id="zoom-out">−</button>
-            </div>
             <div id="placeholder-text">Ingen fil valgt</div>
             <div id="map"></div>
         </div>
@@ -476,57 +416,36 @@
             renderer: L.canvas()
         }).setView([69.65, 18.95], 10);
 
-        const lightTileLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${API_KEY}`, {
-            subdomains: 'abcd', maxZoom: 19, crossOrigin: 'anonymous'
-        });
-
-        const darkTileLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${API_KEY}`, {
-            subdomains: 'abcd', maxZoom: 19, crossOrigin: 'anonymous'
-        });
-
-        let currentTileLayer = lightTileLayer.addTo(map);
+        L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${API_KEY}`, {
+            subdomains: 'abcd',
+            maxZoom: 19,
+            crossOrigin: 'anonymous'
+        }).addTo(map);
 
         let currentPolyline = null;
         let peakMarkersGroup = L.layerGroup().addTo(map);
         let currentGpxData = null;
         let fetchTimeout = null;
         let currentPoints = [];
-        let isDarkTheme = false;
-        let removedPeaks = new Set();
-        let customPositions = new Map();
-
-        document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
-        document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
-
-        document.getElementById('chk-zoom').addEventListener('change', (e) => {
-            document.getElementById('zoom-controls').style.display = e.target.checked ? 'flex' : 'none';
-        });
-
-        document.getElementById('reset-peaks-btn').addEventListener('click', () => {
-            removedPeaks.clear();
-            customPositions.clear();
-            hentFjelltopper();
-        });
+        let isInverted = false;
+        let lastPeakData = [];
 
         document.getElementById('invert-btn').addEventListener('click', () => {
-            isDarkTheme = !isDarkTheme;
+            isInverted = !isInverted;
             const posterFrame = document.getElementById('poster-frame');
-            posterFrame.classList.toggle('dark-theme', isDarkTheme);
+            posterFrame.classList.toggle('inverted', isInverted);
 
-            map.removeLayer(currentTileLayer);
-            currentTileLayer = isDarkTheme ? darkTileLayer : lightTileLayer;
-            currentTileLayer.addTo(map);
+            document.getElementById('invert-btn').innerText = isInverted ? '🔄 Bytt til mørkt tema' : '🔄 Bytt til lyst tema';
 
             if (currentPolyline) {
                 currentPolyline.setStyle({
-                    color: isDarkTheme ? '#ffffff' : '#111111'
+                    color: isInverted ? '#111111' : '#ffffff'
                 });
             }
 
             if (currentPoints.length > 0) {
                 genererHoydeprofil(currentPoints);
             }
-            hentFjelltopper();
         });
 
         map.on('moveend zoomend', () => {
@@ -549,6 +468,12 @@
                 hentFjelltopper();
             } else {
                 map.removeLayer(peakMarkersGroup);
+            }
+        });
+
+        document.getElementById('chk-peak-lines').addEventListener('change', () => {
+            if (lastPeakData.length > 0) {
+                tegnTopper(lastPeakData);
             }
         });
 
@@ -580,8 +505,6 @@
         }
 
         function behandleGpx(gpxText) {
-            removedPeaks.clear();
-            customPositions.clear();
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(gpxText, "text/xml");
 
@@ -646,8 +569,8 @@
             document.getElementById('placeholder-text').style.display = 'none';
 
             currentPolyline = L.polyline(latLngs, {
-                color: isDarkTheme ? '#ffffff' : '#111111',
-                opacity: 0.75,
+                color: isInverted ? '#111111' : '#ffffff',
+                opacity: 0.55,
                 weight: 2.5,
                 lineCap: 'round',
                 lineJoin: 'round'
@@ -661,10 +584,7 @@
             hentStedsnavn(center.lat, center.lng);
             oppdaterMetaVisning();
             genererHoydeprofil(points);
-
-            setTimeout(() => {
-                hentFjelltopper();
-            }, 200);
+            hentFjelltopper();
 
             document.getElementById('download-btn').style.display = 'inline-flex';
         }
@@ -716,7 +636,7 @@
             const center = map.getCenter();
             const radiusMeters = Math.min(Math.round(center.distanceTo(bounds.getNorthEast())), 50000);
 
-            const url = `https://ws.geonorge.no/stedsnavn/v1/punkt?nord=${center.lat}&ost=${center.lng}&radius=${radiusMeters}&navneobjekttype=Fjell&maxAntall=150`;
+            const url = `https://ws.geonorge.no/stedsnavn/v1/punkt?nord=${center.lat}&ost=${center.lng}&radius=${radiusMeters}&navneobjekttype=Fjell&maxAntall=100`;
 
             try {
                 const res = await fetch(url);
@@ -724,6 +644,7 @@
                 const data = await res.json();
 
                 if (data && data.navn && data.navn.length > 0) {
+                    lastPeakData = data.navn;
                     tegnTopper(data.navn);
                 } else {
                     hentFjelltopperOverpass();
@@ -734,92 +655,53 @@
             }
         }
 
-        window.removePeak = function(peakKey) {
-            removedPeaks.add(peakKey);
-            customPositions.delete(peakKey);
-            hentFjelltopper();
-        };
-
         function tegnTopper(toppListe) {
+            peakMarkersGroup.clearLayers();
             const bounds = map.getBounds();
+            const showLines = document.getElementById('chk-peak-lines').checked;
             const unikeTopper = new Map();
 
             toppListe.forEach(item => {
-                let lat, lon, name, ele;
+                const pos = item.representasjonspunkt || item.posisjon;
+                if (!pos) return;
+                
+                const lat = pos.nord || pos.lat;
+                const lon = pos.ost || pos.lng;
+                const name = item.stedsnavn?.[0]?.skrivemåte || item.navn;
+                const ele = item.stedsnavn?.[0]?.høyde || item.høyde;
 
-                if (item.representasjonspunkt) {
-                    lat = item.representasjonspunkt.nord;
-                    lon = item.representasjonspunkt.ost;
-                    name = item.stedsnavn?.[0]?.skrivemåte || item.kommuner?.[0]?.kommunenavn;
-                    ele = item.stedsnavn?.[0]?.høyde;
-                } else if (item.posisjon) {
-                    lat = item.posisjon.lat;
-                    lon = item.posisjon.lng;
-                    name = item.navn;
-                    ele = item.høyde;
-                }
-
-                if (lat && lon && name) {
-                    const nøkkel = `${name.toLowerCase().replace(/\s+/g, '')}_${Math.round(lat*1000)}_${Math.round(lon*1000)}`;
-                    
-                    if (bounds.contains([lat, lon]) && !unikeTopper.has(nøkkel) && !removedPeaks.has(nøkkel)) {
-                        unikeTopper.set(nøkkel, { lat, lon, name, ele, key: nøkkel });
+                if (lat && lon && name && bounds.contains([lat, lon])) {
+                    const nøkkel = `${name.toLowerCase()}_${Math.round(lat*100)}_${Math.round(lon*100)}`;
+                    if (!unikeTopper.has(nøkkel)) {
+                        unikeTopper.set(nøkkel, { lat, lon, name, ele });
                     }
                 }
             });
 
             unikeTopper.forEach(peak => {
-                const peakLatLng = L.latLng(peak.lat, peak.lon);
-
-                L.circleMarker(peakLatLng, {
-                    radius: 3,
-                    color: isDarkTheme ? '#ffffff' : '#111111',
-                    fillColor: isDarkTheme ? '#ffffff' : '#111111',
-                    fillOpacity: 0.9,
-                    stroke: false
-                }).addTo(peakMarkersGroup);
-
-                let labelLatLng;
-                if (customPositions.has(peak.key)) {
-                    labelLatLng = customPositions.get(peak.key);
-                } else {
-                    const offsetLat = peak.lat + 0.0025;
-                    const offsetLon = peak.lon + 0.004;
-                    labelLatLng = L.latLng(offsetLat, offsetLon);
-                }
-
-                const connectorLine = L.polyline([peakLatLng, labelLatLng], {
-                    color: isDarkTheme ? '#ffffff' : '#111111',
-                    weight: 1.2,
-                    dashArray: '2, 3',
-                    opacity: 0.7
-                }).addTo(peakMarkersGroup);
-
                 const labelText = peak.ele ? `${peak.name.toUpperCase()} ${peak.ele}M` : peak.name.toUpperCase();
+                
+                const linePath = showLines ? '<polyline points="0,0 15,-15 25,-15" class="peak-marker-line" />' : '';
+                const textDx = showLines ? 20 : 0;
+                const textDy = showLines ? -12 : -8;
+                const textAnchor = showLines ? "start" : "middle";
 
-                const htmlContent = `
-                    <div class="peak-label-text">
-                        <span>${labelText}</span>
-                        <span class="peak-remove-btn" onclick="removePeak('${peak.key}')">&times;</span>
-                    </div>
+                const svgHtml = `
+                    <svg class="peak-marker-svg" width="220" height="80" viewBox="-110 -40 220 80">
+                        <circle cx="0" cy="0" r="2.5" fill="var(--poster-peak-text)" />
+                        ${linePath}
+                        <text x="${textDx}" y="${textDy}" class="peak-marker-text" text-anchor="${textAnchor}" dominant-baseline="middle">${labelText}</text>
+                    </svg>
                 `;
 
                 const customIcon = L.divIcon({
-                    className: 'peak-label-container',
-                    html: htmlContent,
-                    iconSize: null
+                    className: 'peak-marker-container',
+                    html: svgHtml,
+                    iconSize: [0, 0],
+                    iconAnchor: [0, 0]
                 });
 
-                const labelMarker = L.marker(labelLatLng, {
-                    icon: customIcon,
-                    draggable: true
-                }).addTo(peakMarkersGroup);
-
-                labelMarker.on('drag', function(e) {
-                    const newPos = e.latlng;
-                    connectorLine.setLatLngs([peakLatLng, newPos]);
-                    customPositions.set(peak.key, newPos);
-                });
+                L.marker([peak.lat, peak.lon], { icon: customIcon }).addTo(peakMarkersGroup);
             });
         }
 
@@ -834,11 +716,11 @@
                 const data = await res.json();
                 if (data && data.elements) {
                     const prilagteTopper = data.elements.map(el => ({
-                        posisjon: { lat: el.lat, lng: el.lon },
-                        navn: el.tags.name,
-                        høyde: el.tags.ele
-                    })).filter(t => t.navn);
+                        representasjonspunkt: { nord: el.lat, ost: el.lon },
+                        stedsnavn: [{ skrivemåte: el.tags.name, høyde: el.tags.ele }]
+                    })).filter(t => t.stedsnavn[0].skrivemåte);
 
+                    lastPeakData = prilagteTopper;
                     tegnTopper(prilagteTopper);
                 }
             } catch (e) {
@@ -909,7 +791,7 @@
 
             areaD += ` L ${width} ${height} Z`;
 
-            const strokeColor = isDarkTheme ? '#ffffff' : '#111111';
+            const strokeColor = isInverted ? '#111111' : '#ffffff';
 
             const svgHTML = `
                 <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
@@ -929,20 +811,16 @@
 
         document.getElementById('download-btn').addEventListener('click', function() {
             const frame = document.getElementById('poster-frame');
-            frame.classList.add('rendering-canvas');
             
             html2canvas(frame, {
                 useCORS: true,
                 allowTaint: false,
                 scale: 2
             }).then(canvas => {
-                frame.classList.remove('rendering-canvas');
                 const link = document.createElement('a');
                 link.download = 'gpx-poster-1040x1040.png';
                 link.href = canvas.toDataURL('image/png');
                 link.click();
-            }).catch(err => {
-                frame.classList.remove('rendering-canvas');
             });
         });
     </script>
