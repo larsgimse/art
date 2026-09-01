@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minimalistisk GPX-visning med Kartverket API</title>
+  <title>Minimalistisk GPX-visning</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -89,12 +89,11 @@
     let trackPoints = []; 
     let detectedPeaks = []; 
 
-    // Les GPX direkte i nettleserens minne
     document.getElementById('gpx-input').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
 
-      statusEl.textContent = "Leser fil...";
+      statusEl.textContent = "Leser GPX-fil...";
 
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -117,15 +116,14 @@
       });
 
       if (trackPoints.length > 0) {
-        statusEl.textContent = "Søker etter topper hos Kartverket...";
-        fetchPeaksFromKartverket();
+        statusEl.textContent = "Søker etter topper i kartdata...";
+        fetchPeaks();
       } else {
         statusEl.textContent = "Ingen gyldige spor-punkter funnet i GPX.";
       }
     }
 
-    // Hent topper fra Kartverket Stedsnavn-API basert på GPX-grensene
-    async function fetchPeaksFromKartverket() {
+    async function fetchPeaks() {
       let minLat = Infinity, maxLat = -Infinity;
       let minLon = Infinity, maxLon = -Infinity;
 
@@ -136,42 +134,71 @@
         if (p.lon > maxLon) maxLon = p.lon;
       });
 
-      // Legg på en liten margin rundt sporet for BoundingBox-søk (ca. 1-2 km)
-      const bbox = `${minLon - 0.02},${minLat - 0.01},${maxLon + 0.02},${maxLat + 0.01}`;
-      const apiUrl = `https://api.kartverket.no/stedsnavn/v1/navn?bbox=${bbox}&navneobjekttype=Fjell&maksAntall=50`;
+      // Utvid Bounding Box litt (ca 1.5 - 2 km margin)
+      const buffer = 0.025;
+      const bMinLat = minLat - buffer;
+      const bMaxLat = maxLat + buffer;
+      const bMinLon = minLon - buffer;
+      const bMaxLon = maxLon + buffer;
 
+      let peaks = [];
+
+      // 1. Forsøk Kartverket sin Stedsnavn-tjeneste (ws.geonorge.no)
       try {
-        const response = await fetch(apiUrl);
-        const data = await response.json();
-        
-        const peaks = parseKartverketResponse(data);
-        statusEl.textContent = `Fant ${peaks.length} topper i nærområdet. Renderer...`;
-        render(peaks);
+        const url = `https://ws.geonorge.no/stedsnavn/v1/punkt?nordmin=${bMinLat}&nordmaks=${bMaxLat}&ostmin=${bMinLon}&ostmaks=${bMaxLon}&navneobjekttype=Fjell*&maxAntall=100`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const json = await res.json();
+          peaks = parseKartverketGeonorge(json);
+        }
       } catch (err) {
-        console.error("Kartverket API-feil:", err);
-        statusEl.textContent = "Kunne ikke hente topper fra Kartverket. Viser kun spor.";
-        render([]);
+        console.warn("Kartverket API feilet, prøver Overpass fallback...", err);
       }
+
+      // 2. Fallback til Overpass API (OpenStreetMap) om Kartverket returnerte 0
+      if (peaks.length === 0) {
+        try {
+          const overpassQuery = `[out:json];node["natural"="peak"](${bMinLat},${bMinLon},${bMaxLat},${bMaxLon});out;`;
+          const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(overpassQuery)}`);
+          if (res.ok) {
+            const json = await res.json();
+            peaks = parseOverpass(json);
+          }
+        } catch (err) {
+          console.error("Overpass API feilet:", err);
+        }
+      }
+
+      statusEl.textContent = `Identifiserte ${peaks.length} potensielle topper. Genererer visning...`;
+      render(peaks);
     }
 
-    function parseKartverketResponse(data) {
+    function parseKartverketGeonorge(data) {
       if (!data || !data.navn) return [];
-      
-      const foundPeaks = [];
+      const peaks = [];
       data.navn.forEach(item => {
-        const name = item.stedsnavn[0]?.skrivemåte || item.represterendePunkt?.stedsnavn;
+        const name = item.stedsnavn?.[0]?.skrivemåte || item.stedsnavn;
         const lat = item.representasjonspunkt?.nord;
         const lon = item.representasjonspunkt?.øst;
-        const height = item.meterOverHavet || null;
+        const height = item.meterOverHavet || item.stedsnavn?.[0]?.meterOverHavet;
 
         if (name && lat && lon) {
-          foundPeaks.push({ name, lat, lon, elevation: height });
+          peaks.push({ name, lat, lon, elevation: height });
         }
       });
-      return foundPeaks;
+      return peaks;
     }
 
-    // Haversine-formel for avstand i meter
+    function parseOverpass(data) {
+      if (!data || !data.elements) return [];
+      return data.elements.map(el => ({
+        name: el.tags?.name || "Ukjent topp",
+        lat: el.lat,
+        lon: el.lon,
+        elevation: el.tags?.ele ? parseInt(el.tags.ele) : null
+      }));
+    }
+
     function getDistanceMeters(lat1, lon1, lat2, lon2) {
       const R = 6371000;
       const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -186,7 +213,6 @@
       labelsLayer.innerHTML = '';
       detectedPeaks = [];
 
-      // 1. Finn min/maks
       let minLat = Infinity, maxLat = -Infinity;
       let minLon = Infinity, maxLon = -Infinity;
 
@@ -204,8 +230,8 @@
       const adjustedLonSpan = lonSpan * cosLat;
       const maxSpan = Math.max(latSpan, adjustedLonSpan);
       
-      // Økt skaleringen til 60% av rammen (større spor)
-      const scale = (canvas.width * 0.60) / maxSpan;
+      // Sporet tar ca. 60-65% av rammen
+      const scale = (canvas.width * 0.62) / maxSpan;
 
       const centerLat = (minLat + maxLat) / 2;
       const centerLon = (minLon + maxLon) / 2;
@@ -217,7 +243,7 @@
         };
       }
 
-      // 2. Tegn sporet
+      // 1. Tegn sporet
       ctx.beginPath();
       ctx.strokeStyle = "#000000";
       ctx.lineWidth = 1.8;
@@ -229,15 +255,18 @@
       });
       ctx.stroke();
 
-      // 3. Sjekk hvilke Kartverket-topper sporet passerer (innenfor 300m)
-      const MARGIN_METER = 300; 
+      // 2. Sjekk om sporet går i nærheten av toppen (500 meters margin)
+      const MARGIN_METER = 500;
+      const addedNames = new Set();
 
       apiPeaks.forEach(peak => {
+        if (addedNames.has(peak.name)) return; // Unngå duplikater fra API-et
+
         let closestPt = null;
         let minDistance = Infinity;
 
-        // Tynner ut sjekkpunkter for ytelse
-        const step = Math.max(1, Math.floor(trackPoints.length / 300));
+        // Tynner ut sjekken for ytelse
+        const step = Math.max(1, Math.floor(trackPoints.length / 400));
         for (let i = 0; i < trackPoints.length; i += step) {
           const p = trackPoints[i];
           const dist = getDistanceMeters(p.lat, p.lon, peak.lat, peak.lon);
@@ -248,6 +277,7 @@
         }
 
         if (minDistance <= MARGIN_METER && closestPt) {
+          addedNames.add(peak.name);
           const anchor = toCanvasCoords(closestPt.lat, closestPt.lon);
           createPeakAnnotation(peak, anchor);
         }
@@ -263,7 +293,7 @@
       const heightText = peak.elevation ? ` (${peak.elevation} m)` : '';
       labelDiv.innerHTML = `<div class="draggable-label">${peak.name}${heightText}</div>`;
 
-      let initialX = anchor.x + 30;
+      let initialX = anchor.x + 35;
       let initialY = anchor.y - 25;
 
       labelDiv.style.left = `${initialX}px`;
@@ -316,7 +346,6 @@
     }
 
     function redrawCanvasAndLines() {
-      // Re-tegn kun stiplede linjer og festeprikker
       let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
       trackPoints.forEach(p => {
         if (p.lat < minLat) minLat = p.lat;
@@ -329,7 +358,7 @@
       const lonSpan = maxLon - minLon || 0.005;
       const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
       const maxSpan = Math.max(latSpan, lonSpan * cosLat);
-      const scale = (canvas.width * 0.60) / maxSpan;
+      const scale = (canvas.width * 0.62) / maxSpan;
       const centerLat = (minLat + maxLat) / 2;
       const centerLon = (minLon + maxLon) / 2;
 
@@ -342,7 +371,7 @@
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Spor
+      // Tegn sporet på nytt
       ctx.beginPath();
       ctx.strokeStyle = "#000000";
       ctx.lineWidth = 1.8;
