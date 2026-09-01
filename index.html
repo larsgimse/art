@@ -101,7 +101,7 @@
             background: #161618;
             border: 1px solid #333;
             border-radius: 12px;
-            width: 360px;
+            width: 380px;
             padding: 24px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.8);
         }
@@ -139,6 +139,16 @@
             align-items: center;
             font-size: 0.95rem;
             color: #ddd;
+        }
+
+        .select-input {
+            background: #222;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            outline: none;
         }
 
         .switch {
@@ -234,7 +244,6 @@
             transition: filter 0.3s ease;
         }
 
-        /* Sikrer at markør-laget havner på toppen */
         .leaflet-marker-pane {
             z-index: 650 !important;
         }
@@ -246,10 +255,20 @@
 
         .peak-marker-svg {
             overflow: visible !important;
-            cursor: pointer;
             position: absolute;
             left: 0;
             top: 0;
+            pointer-events: none;
+        }
+
+        .peak-marker-svg circle,
+        .peak-marker-svg .peak-marker-text-group {
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        .peak-marker-text-group {
+            cursor: move;
         }
 
         .peak-marker-line {
@@ -265,6 +284,7 @@
             font-weight: 600;
             letter-spacing: 1px;
             text-transform: uppercase;
+            user-select: none;
         }
 
         .peak-marker-svg.crossed-out .peak-marker-text {
@@ -360,19 +380,28 @@
         <input type="file" id="gpx-input" accept=".gpx">
         
         <button id="invert-btn" class="btn">🔄 Bytt til lyst tema</button>
-        <button id="open-menu-btn" class="btn">⚙️ Visningselementer</button>
+        <button id="open-menu-btn" class="btn">⚙️ Innstillinger & Visning</button>
         <button id="download-btn" class="btn" style="display: none;">📥 Last ned bilde</button>
     </div>
 
     <div class="menu-modal" id="menu-modal">
         <div class="menu-card">
             <h3>
-                <span>Synlige elementer</span>
+                <span>Visningselementer</span>
                 <button class="close-btn" id="close-menu-btn">&times;</button>
             </h3>
             <div class="toggle-list">
                 <div class="toggle-item">
-                    <span>⛰️ Fjelltopper</span>
+                    <span>🗺️ Kartkilde</span>
+                    <select id="select-tile-provider" class="select-input">
+                        <option value="kartverket">Kartverket Topo</option>
+                        <option value="osm">OpenStreetMap</option>
+                        <option value="carto-dark">CartoDB Dark</option>
+                        <option value="carto-light">CartoDB Light</option>
+                    </select>
+                </div>
+                <div class="toggle-item">
+                    <span>⛰️ Fjelltopper (OSM)</span>
                     <label class="switch">
                         <input type="checkbox" id="chk-peaks" checked>
                         <span class="slider"></span>
@@ -439,13 +468,20 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
+        const tileProviders = {
+            'kartverket': 'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
+            'osm': 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            'carto-dark': 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+            'carto-light': 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+        };
+
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false,
             preferCanvas: true
         }).setView([69.5800, 18.9500], 10);
 
-        L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', {
+        let currentTileLayer = L.tileLayer(tileProviders['kartverket'], {
             maxZoom: 18,
             crossOrigin: true
         }).addTo(map);
@@ -458,6 +494,16 @@
         let isInverted = false;
         let lastPeakData = [];
         const crossedPeaksState = new Set();
+        const customPeakOffsets = new Map();
+        let manualPeaks = [];
+
+        document.getElementById('select-tile-provider').addEventListener('change', (e) => {
+            const url = tileProviders[e.target.value];
+            if (url) {
+                map.removeLayer(currentTileLayer);
+                currentTileLayer = L.tileLayer(url, { maxZoom: 18, crossOrigin: true }).addTo(map);
+            }
+        });
 
         document.getElementById('invert-btn').addEventListener('click', () => {
             isInverted = !isInverted;
@@ -468,6 +514,7 @@
                 currentPolyline.setStyle({ color: isInverted ? '#111111' : '#ffffff' });
             }
             if (currentPoints.length > 0) genererHoydeprofil(currentPoints);
+            tegnTopper([...lastPeakData, ...manualPeaks]);
         });
 
         hentFjelltopper();
@@ -479,6 +526,8 @@
             if (document.getElementById('chk-peaks').checked) {
                 clearTimeout(fetchTimeout);
                 fetchTimeout = setTimeout(hentFjelltopper, 300);
+            } else {
+                tegnTopper(manualPeaks);
             }
         });
 
@@ -489,15 +538,14 @@
 
         document.getElementById('chk-peaks').addEventListener('change', (e) => {
             if (e.target.checked) {
-                peakMarkersGroup.addTo(map);
                 hentFjelltopper();
             } else {
-                map.removeLayer(peakMarkersGroup);
+                tegnTopper(manualPeaks);
             }
         });
 
         document.getElementById('chk-peak-lines').addEventListener('change', () => {
-            if (lastPeakData.length > 0) tegnTopper(lastPeakData);
+            tegnTopper([...lastPeakData, ...manualPeaks]);
         });
 
         ['chk-dist', 'chk-time', 'chk-date', 'chk-clock'].forEach(id => {
@@ -536,8 +584,7 @@
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
             const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-                      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         }
 
@@ -590,6 +637,7 @@
             }
 
             currentPoints = points;
+            manualPeaks = [];
 
             const timePoints = points.filter(p => p.time !== null);
             let startTime = timePoints.length > 0 ? timePoints[0].time : null;
@@ -612,10 +660,25 @@
             currentPolyline = L.polyline(latLngs, {
                 color: isInverted ? '#111111' : '#ffffff',
                 opacity: 0.8,
-                weight: 3,
+                weight: 4,
                 lineCap: 'round',
                 lineJoin: 'round'
             }).addTo(map);
+
+            currentPolyline.on('click', (e) => {
+                const navn = prompt("Navn på punkt/topp:", "NY TOPP");
+                if (navn) {
+                    const id = `manual_${Date.now()}`;
+                    manualPeaks.push({
+                        id: id,
+                        lat: e.latlng.lat,
+                        lon: e.latlng.lng,
+                        name: navn,
+                        ele: null
+                    });
+                    tegnTopper([...lastPeakData, ...manualPeaks]);
+                }
+            });
 
             const currentBounds = currentPolyline.getBounds();
             map.fitBounds(currentBounds, { padding: [70, 70] });
@@ -660,7 +723,10 @@
         }
 
         async function hentFjelltopper() {
-            if (!document.getElementById('chk-peaks').checked) return;
+            if (!document.getElementById('chk-peaks').checked) {
+                tegnTopper(manualPeaks);
+                return;
+            }
             showLoading(true);
 
             const bounds = map.getBounds();
@@ -676,12 +742,13 @@
 
                 if (data && data.elements && data.elements.length > 0) {
                     lastPeakData = data.elements;
-                    tegnTopper(data.elements);
                 } else {
-                    peakMarkersGroup.clearLayers();
+                    lastPeakData = [];
                 }
+                tegnTopper([...lastPeakData, ...manualPeaks]);
             } catch (err) {
                 console.warn("Feil ved henting av fjelltopper:", err);
+                tegnTopper(manualPeaks);
             } finally {
                 showLoading(false);
             }
@@ -696,13 +763,13 @@
             elements.forEach(el => {
                 const lat = el.lat;
                 const lon = el.lon;
-                const name = el.tags ? (el.tags.name || el.tags["name:no"]) : null;
-                const ele = el.tags ? el.tags.ele : null;
+                const name = el.name || (el.tags ? (el.tags.name || el.tags["name:no"]) : null);
+                const ele = el.ele || (el.tags ? el.tags.ele : null);
+                const id = el.id || `${name?.toLowerCase()}_${Math.round(lat*1000)}_${Math.round(lon*1000)}`;
 
                 if (lat && lon && name && bounds.contains([lat, lon])) {
-                    const nøkkel = `${name.toLowerCase()}_${Math.round(lat*1000)}_${Math.round(lon*1000)}`;
-                    if (!unikeTopper.has(nøkkel)) {
-                        unikeTopper.set(nøkkel, { id: nøkkel, lat, lon, name, ele });
+                    if (!unikeTopper.has(id)) {
+                        unikeTopper.set(id, { id, lat, lon, name, ele });
                     }
                 }
             });
@@ -711,17 +778,18 @@
                 const isCrossed = crossedPeaksState.has(peak.id);
                 const labelText = peak.ele ? `${peak.name.toUpperCase()} ${peak.ele}M` : peak.name.toUpperCase();
                 
-                // Tegn punktet på posisjon (0,0) i SVG-en, og stiplede linjer opp/høyre
-                const linePath = showLines ? '<path d="M 0,0 L 15,-15 L 35,-15" class="peak-marker-line" fill="none" />' : '';
-                const textDx = showLines ? 40 : 0;
-                const textDy = showLines ? -15 : -8;
-                const textAnchor = showLines ? "start" : "middle";
+                let offset = customPeakOffsets.get(peak.id) || { dx: 35, dy: -25 };
+                
+                const linePath = showLines ? `<line class="peak-marker-line" x1="0" y1="0" x2="${offset.dx}" y2="${offset.dy}" />` : '';
+                const textAnchor = offset.dx >= 0 ? "start" : "end";
 
                 const svgHtml = `
-                    <svg class="peak-marker-svg ${isCrossed ? 'crossed-out' : ''}" width="300" height="100" viewBox="-50 -50 300 100">
-                        <circle cx="0" cy="0" r="3.5" fill="var(--poster-peak-text)" />
+                    <svg class="peak-marker-svg ${isCrossed ? 'crossed-out' : ''}" width="400" height="400" viewBox="-200 -200 400 400">
                         ${linePath}
-                        <text x="${textDx}" y="${textDy}" class="peak-marker-text" text-anchor="${textAnchor}" dominant-baseline="middle">${labelText}</text>
+                        <circle cx="0" cy="0" r="4" fill="var(--poster-peak-text)" data-id="${peak.id}" />
+                        <g class="peak-marker-text-group" transform="translate(${offset.dx}, ${offset.dy})" data-id="${peak.id}">
+                            <text class="peak-marker-text" text-anchor="${textAnchor}" dominant-baseline="middle">${labelText}</text>
+                        </g>
                     </svg>
                 `;
 
@@ -734,13 +802,53 @@
 
                 const marker = L.marker([peak.lat, peak.lon], { icon: customIcon });
 
-                marker.on('click', () => {
-                    if (crossedPeaksState.has(peak.id)) {
-                        crossedPeaksState.delete(peak.id);
-                    } else {
-                        crossedPeaksState.add(peak.id);
+                marker.on('add', () => {
+                    const el = marker.getElement();
+                    if (!el) return;
+
+                    const circle = el.querySelector('circle');
+                    const textGroup = el.querySelector('.peak-marker-text-group');
+
+                    if (circle) {
+                        circle.addEventListener('click', (ev) => {
+                            ev.stopPropagation();
+                            if (crossedPeaksState.has(peak.id)) {
+                                crossedPeaksState.delete(peak.id);
+                            } else {
+                                crossedPeaksState.add(peak.id);
+                            }
+                            tegnTopper([...lastPeakData, ...manualPeaks]);
+                        });
                     }
-                    tegnTopper(lastPeakData);
+
+                    if (textGroup) {
+                        let isDragging = false;
+                        let startX, startY;
+
+                        textGroup.addEventListener('mousedown', (ev) => {
+                            ev.stopPropagation();
+                            isDragging = true;
+                            startX = ev.clientX - offset.dx;
+                            startY = ev.clientY - offset.dy;
+                            
+                            const onMouseMove = (moveEv) => {
+                                if (!isDragging) return;
+                                offset.dx = moveEv.clientX - startX;
+                                offset.dy = moveEv.clientY - startY;
+                                customPeakOffsets.set(peak.id, offset);
+                                tegnTopper([...lastPeakData, ...manualPeaks]);
+                            };
+
+                            const onMouseUp = () => {
+                                isDragging = false;
+                                window.removeEventListener('mousemove', onMouseMove);
+                                window.removeEventListener('mouseup', onMouseUp);
+                            };
+
+                            window.addEventListener('mousemove', onMouseMove);
+                            window.addEventListener('mouseup', onMouseUp);
+                        });
+                    }
                 });
 
                 marker.addTo(peakMarkersGroup);
@@ -828,39 +936,63 @@
             profileContainer.innerHTML = svgHTML;
         }
 
-        document.getElementById('download-btn').addEventListener('click', function() {
+        document.getElementById('download-btn').addEventListener('click', async function() {
             const frame = document.getElementById('poster-frame');
             showLoading(true);
 
-            // Påfør CSS-filteret direkte på alle kart-flis-bilder før skjermdump tas
-            const isInv = frame.classList.contains('inverted');
-            const filterValue = isInv 
-                ? 'grayscale(100%) contrast(1.1) brightness(0.95)' 
-                : 'grayscale(100%) invert(100%) contrast(1.2) brightness(0.85)';
+            try {
+                // Konverterer synlige kartfliser direkte til canvas for å sikre farger ved eksport
+                const mapWrapper = document.getElementById('map-wrapper');
+                const tiles = document.querySelectorAll('.leaflet-tile-pane img');
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = mapWrapper.clientWidth;
+                canvas.height = mapWrapper.clientHeight;
+                const ctx = canvas.getContext('2d');
 
-            const originalTiles = document.querySelectorAll('.leaflet-tile-pane img');
-            originalTiles.forEach(img => {
-                img.setAttribute('crossorigin', 'anonymous');
-                img.style.filter = filterValue;
-                img.style.webkitFilter = filterValue;
-            });
+                const isInv = frame.classList.contains('inverted');
+                if (isInv) {
+                    ctx.filter = 'grayscale(100%) contrast(1.1) brightness(0.95)';
+                } else {
+                    ctx.filter = 'grayscale(100%) invert(100%) contrast(1.2) brightness(0.85)';
+                }
 
-            html2canvas(frame, {
-                useCORS: true,
-                allowTaint: true,
-                scale: 2,
-                logging: false,
-                ignoreElements: (element) => element.classList.contains('leaflet-control-container')
-            }).then(canvas => {
-                const link = document.createElement('a');
-                link.download = 'gpx-poster.png';
-                link.href = canvas.toDataURL('image/png');
-                link.click();
+                const promises = Array.from(tiles).map(img => {
+                    return new Promise((resolve) => {
+                        const newImg = new Image();
+                        newImg.crossOrigin = "anonymous";
+                        newImg.onload = () => {
+                            const rect = img.getBoundingClientRect();
+                            const wrapperRect = mapWrapper.getBoundingClientRect();
+                            const x = rect.left - wrapperRect.left;
+                            const y = rect.top - wrapperRect.top;
+                            ctx.drawImage(newImg, x, y, rect.width, rect.height);
+                            resolve();
+                        };
+                        newImg.onerror = () => resolve();
+                        newImg.src = img.src;
+                    });
+                });
+
+                await Promise.all(promises);
+
+                html2canvas(frame, {
+                    useCORS: true,
+                    allowTaint: true,
+                    scale: 2,
+                    logging: false,
+                    ignoreElements: (element) => element.classList.contains('leaflet-control-container')
+                }).then(renderedCanvas => {
+                    const link = document.createElement('a');
+                    link.download = 'gpx-poster.png';
+                    link.href = renderedCanvas.toDataURL('image/png');
+                    link.click();
+                    showLoading(false);
+                });
+            } catch(err) {
+                console.error("Feil under bildeeksport:", err);
                 showLoading(false);
-            }).catch(err => {
-                console.error("Feil ved generering av bilde:", err);
-                showLoading(false);
-            });
+            }
         });
     </script>
 </body>
