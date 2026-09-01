@@ -296,7 +296,6 @@
             display: block;
         }
 
-        /* Skjuler sletteknapper når bildet eksporteres */
         .rendering-canvas .peak-remove-btn {
             display: none !important;
         }
@@ -719,6 +718,20 @@
                 const avstand = turf.pointToLineDistance(toppPunkt, trackGeoJSON, { units: 'kilometers' });
 
                 if (avstand <= maxAvstand) {
+                    // Finn det nærmeste punktet på GPX-sporet
+                    const nearestOnLine = turf.nearestPointOnLine(trackGeoJSON, toppPunkt);
+                    const trackLat = nearestOnLine.geometry.coordinates[1];
+                    const trackLon = nearestOnLine.geometry.coordinates[0];
+
+                    // Tegn en liten, fast prikk på selve fjelltoppen
+                    L.circleMarker([peak.lat, peak.lon], {
+                        radius: 2,
+                        color: 'var(--poster-peak-text)',
+                        fillColor: 'var(--poster-peak-text)',
+                        fillOpacity: 0.8,
+                        stroke: false
+                    }).addTo(peakMarkersGroup);
+
                     let dxLine = 20;
                     let dyLine = -20;
                     let textAnchor = "start";
@@ -747,7 +760,8 @@
                         iconAnchor: [0, 0]
                     });
 
-                    L.marker([peak.lat, peak.lon], { icon: customIcon }).addTo(peakMarkersGroup);
+                    // Lås etiketten til selve GPX-sporet
+                    L.marker([trackLat, trackLon], { icon: customIcon }).addTo(peakMarkersGroup);
                 }
             });
         }
