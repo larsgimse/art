@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimalistisk GPX-Poster Generator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0b0b0b;
+            --card-bg: #111111;
+            --border-color: #ffffff;
+            --text-color: #ffffff;
+            --subtext-color: #888888;
+            --accent-color: #4cd964;
+
+            --poster-bg: #f5f5f7;
+            --poster-border: #111111;
+            --poster-text-main: #111111;
+            --poster-text-sub: #666666;
+            --poster-text-coord: #444444;
+            --poster-text-stats: #222222;
+            --poster-map-bg: #e5e5e7;
+            --poster-map-border: #dddddd;
+            --poster-track: #111111;
+            --poster-peak-text: #111111;
+            --poster-peak-line: rgba(0, 0, 0, 0.7);
+        }
+
+        #poster-frame.dark-theme {
+            --poster-bg: #111111;
+            --poster-border: #ffffff;
+            --poster-text-main: #ffffff;
+            --poster-text-sub: #888888;
+            --poster-text-coord: #aaaaaa;
+            --poster-text-stats: #dddddd;
+            --poster-map-bg: #09090b;
+            --poster-map-border: #222222;
+            --poster-track: #ffffff;
+            --poster-peak-text: #ffffff;
+            --poster-peak-line: rgba(255, 255, 255, 0.7);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .controls-bar {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            align-items: center;
+            max-width: 1040px;
+            z-index: 1000;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 10px 18px;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #333;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .btn:hover { background: #282828; border-color: #555; }
+        .btn-primary { background: #ffffff; color: #000; border-color: #ffffff; font-weight: 600; }
+        .btn-primary:hover { background: #e6e6e6; }
+
+        input[type="file"] { display: none; }
+
+        .menu-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .menu-modal.open { display: flex; }
+
+        .menu-card {
+            background: #161618;
+            border: 1px solid #333;
+            border-radius: 12px;
+            width: 360px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.8);
+        }
+
+        .menu-card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #2a2a2a;
+            padding-bottom: 10px;
+            letter-spacing: 1px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 1.4rem;
+            cursor: pointer;
+        }
+
+        .close-btn:hover { color: #fff; }
+
+        .toggle-list {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .toggle-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+            color: #ddd;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input { opacity: 0; width: 0; height: 0; }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333;
+            transition: .3s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider { background-color: #34c759; }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        #poster-frame {
+            width: 1040px;
+            height: 1040px;
+            background: var(--poster-bg);
+            border: 20px solid var(--poster-border);
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            position: relative;
+            transition: background 0.3s ease, border-color 0.3s ease;
+        }
+
+        .poster-header {
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            width: 100%;
+            margin-bottom: 12px;
+        }
+
+        .poster-header h2 {
+            font-size: 2.2rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--poster-text-main);
+            letter-spacing: 5px;
+            transition: color 0.3s ease;
+        }
+
+        .poster-header span {
+            font-size: 1.1rem;
+            color: var(--poster-text-sub);
+            letter-spacing: 3px;
+            transition: color 0.3s ease;
+        }
+
+        #map-wrapper {
+            width: 100%;
+            flex: 1;
+            border: 1px solid var(--poster-map-border);
+            position: relative;
+            background: var(--poster-map-bg);
+            transition: background 0.3s ease, border-color 0.3s ease;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            background: var(--poster-map-bg);
+        }
+
+        .zoom-controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .zoom-btn {
+            width: 36px;
+            height: 36px;
+            background: rgba(22, 22, 24, 0.85);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(4px);
+            transition: all 0.2s ease;
+        }
+
+        .zoom-btn:hover {
+            background: rgba(40, 40, 45, 0.95);
+            border-color: rgba(255, 255, 255, 0.4);
+        }
+
+        .peak-label-container {
+            background: none !important;
+            border: none !important;
+        }
+
+        .peak-label-text {
+            color: var(--poster-peak-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            white-space: nowrap;
+            cursor: move;
+            user-select: none;
+            background: rgba(255, 255, 255, 0.85);
+            padding: 3px 6px;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid rgba(0, 0, 0, 0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #poster-frame.dark-theme .peak-label-text {
+            background: rgba(0, 0, 0, 0.65);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: none;
+        }
+
+        .peak-remove-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(220, 38, 38, 0.85);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 14px;
+            height: 14px;
+            font-size: 10px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+            transition: background 0.15s ease;
+        }
+
+        .peak-remove-btn:hover {
+            background: rgba(239, 68, 68, 1);
+        }
+
+        .rendering-canvas .peak-remove-btn,
+        .rendering-canvas .zoom-controls {
+            display: none !important;
+        }
+
+        .poster-footer {
+            width: 100%;
+            margin-top: 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .meta-stats {
+            display: flex;
+            gap: 20px;
+            font-family: monospace;
+            font-size: 0.95rem;
+            letter-spacing: 2px;
+            color: var(--poster-text-stats);
+            text-transform: uppercase;
+            transition: color 0.3s ease;
+        }
+
+        .coordinates {
+            font-family: monospace;
+            font-size: 1.1rem;
+            letter-spacing: 4px;
+            color: var(--poster-text-coord);
+            text-align: center;
+            transition: color 0.3s ease;
+        }
+
+        #elevation-profile {
+            width: 45%;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #elevation-profile svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        #placeholder-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--poster-text-sub);
+            font-size: 1.4rem;
+            pointer-events: none;
+            z-index: 500;
+            letter-spacing: 2px;
+            transition: color 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="controls-bar">
+        <label for="gpx-input" class="btn btn-primary">📁 Velg GPX-fil</label>
+        <input type="file" id="gpx-input" accept=".gpx">
+        
+        <button id="invert-btn" class="btn">🔄 Bytt tema (Mørk/Lys)</button>
+        <button id="open-menu-btn" class="btn">⚙️ Visningselementer</button>
+        <button id="reset-peaks-btn" class="btn">⛰️ Tilbakestill topper</button>
+        <button id="download-btn" class="btn" style="display: none;">📥 Last ned bilde</button>
+    </div>
+
+    <div class="menu-modal" id="menu-modal">
+        <div class="menu-card">
+            <h3>
+                <span>Synlige elementer</span>
+                <button class="close-btn" id="close-menu-btn">&times;</button>
+            </h3>
+            <div class="toggle-list">
+                <div class="toggle-item">
+                    <span>🔍 Zoom-knapper</span>
+                    <label class="switch">
+                        <input type="checkbox" id="chk-zoom" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>⛰️ Fjelltopper</span>
+                    <label class="switch">
+                        <input type="checkbox" id="chk-peaks" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>📐 Distanse (km)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="chk-dist" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>⏱️ Varighet (tid)</span>
+                    <label class="switch">
+                        <input type="checkbox" id="chk-time" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>📅 Dato</span>
+                    <label class="switch">
+                        <input type="checkbox" id="chk-date" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="toggle-item">
+                    <span>🕒 Klokkeslett</span>
+                    <label class="switch">
+                        <input type="checkbox" id="chk-clock" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="poster-frame">
+        <div class="poster-header">
+            <h2 id="location-name">DIN TUR</h2>
+            <span id="location-sub">LAST OPP GPX FOR Å GENERERE</span>
+        </div>
+
+        <div id="map-wrapper">
+            <div class="zoom-controls" id="zoom-controls">
+                <button class="zoom-btn" id="zoom-in">+</button>
+                <button class="zoom-btn" id="zoom-out">−</button>
+            </div>
+            <div id="placeholder-text">Ingen fil valgt</div>
+            <div id="map"></div>
+        </div>
+
+        <div class="poster-footer">
+            <div class="meta-stats" id="meta-stats"></div>
+            <div class="coordinates" id="coordinates">00.0000° N / 00.0000° E</div>
+            <div id="elevation-profile"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const API_KEY = 'cb1_2o3a_1_671194bbedbad28841272141';
+
+        const map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false,
+            renderer: L.canvas()
+        }).setView([69.65, 18.95], 10);
+
+        const lightTileLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${API_KEY}`, {
+            subdomains: 'abcd', maxZoom: 19, crossOrigin: 'anonymous'
+        });
+
+        const darkTileLayer = L.tileLayer(`https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png?key=${API_KEY}`, {
+            subdomains: 'abcd', maxZoom: 19, crossOrigin: 'anonymous'
+        });
+
+        let currentTileLayer = lightTileLayer.addTo(map);
+
+        let currentPolyline = null;
+        let peakMarkersGroup = L.layerGroup().addTo(map);
+        let currentGpxData = null;
+        let fetchTimeout = null;
+        let currentPoints = [];
+        let isDarkTheme = false;
+        let removedPeaks = new Set();
+        let customPositions = new Map();
+
+        document.getElementById('zoom-in').addEventListener('click', () => map.zoomIn());
+        document.getElementById('zoom-out').addEventListener('click', () => map.zoomOut());
+
+        document.getElementById('chk-zoom').addEventListener('change', (e) => {
+            document.getElementById('zoom-controls').style.display = e.target.checked ? 'flex' : 'none';
+        });
+
+        document.getElementById('reset-peaks-btn').addEventListener('click', () => {
+            removedPeaks.clear();
+            customPositions.clear();
+            hentFjelltopper();
+        });
+
+        document.getElementById('invert-btn').addEventListener('click', () => {
+            isDarkTheme = !isDarkTheme;
+            const posterFrame = document.getElementById('poster-frame');
+            posterFrame.classList.toggle('dark-theme', isDarkTheme);
+
+            map.removeLayer(currentTileLayer);
+            currentTileLayer = isDarkTheme ? darkTileLayer : lightTileLayer;
+            currentTileLayer.addTo(map);
+
+            if (currentPolyline) {
+                currentPolyline.setStyle({
+                    color: isDarkTheme ? '#ffffff' : '#111111'
+                });
+            }
+
+            if (currentPoints.length > 0) {
+                genererHoydeprofil(currentPoints);
+            }
+            hentFjelltopper();
+        });
+
+        map.on('moveend zoomend', () => {
+            if (document.getElementById('chk-peaks').checked) {
+                clearTimeout(fetchTimeout);
+                fetchTimeout = setTimeout(hentFjelltopper, 300);
+            }
+        });
+
+        const modal = document.getElementById('menu-modal');
+        document.getElementById('open-menu-btn').addEventListener('click', () => modal.classList.add('open'));
+        document.getElementById('close-menu-btn').addEventListener('click', () => modal.classList.remove('open'));
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.classList.remove('open');
+        });
+
+        document.getElementById('chk-peaks').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                peakMarkersGroup.addTo(map);
+                hentFjelltopper();
+            } else {
+                map.removeLayer(peakMarkersGroup);
+            }
+        });
+
+        ['chk-dist', 'chk-time', 'chk-date', 'chk-clock'].forEach(id => {
+            document.getElementById(id).addEventListener('change', oppdaterMetaVisning);
+        });
+
+        document.getElementById('gpx-input').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                behandleGpx(event.target.result);
+                document.getElementById('gpx-input').value = '';
+            };
+            reader.readAsText(file);
+        });
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+                Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        function behandleGpx(gpxText) {
+            removedPeaks.clear();
+            customPositions.clear();
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(gpxText, "text/xml");
+
+            const trkpts = xmlDoc.querySelectorAll("trkpt");
+            let rawPoints = [];
+
+            trkpts.forEach(pt => {
+                const lat = parseFloat(pt.getAttribute("lat"));
+                const lon = parseFloat(pt.getAttribute("lon"));
+                const eleEl = pt.querySelector("ele");
+                const ele = eleEl ? parseFloat(eleEl.textContent) : null;
+                const timeEl = pt.querySelector("time");
+                const time = timeEl ? new Date(timeEl.textContent) : null;
+
+                if (!isNaN(lat) && !isNaN(lon)) {
+                    rawPoints.push({ lat, lon, ele, time });
+                }
+            });
+
+            if (rawPoints.length === 0) {
+                alert("Fant ingen gyldige posisjons-punkter i GPX-filen.");
+                return;
+            }
+
+            let cumulativeDistance = 0;
+            let points = [];
+            let latLngs = [];
+
+            for (let i = 0; i < rawPoints.length; i++) {
+                if (i > 0) {
+                    cumulativeDistance += calculateDistance(
+                        rawPoints[i-1].lat, rawPoints[i-1].lon,
+                        rawPoints[i].lat, rawPoints[i].lon
+                    );
+                }
+                points.push({
+                    lat: rawPoints[i].lat,
+                    lon: rawPoints[i].lon,
+                    ele: rawPoints[i].ele,
+                    time: rawPoints[i].time,
+                    dist: cumulativeDistance
+                });
+                latLngs.push([rawPoints[i].lat, rawPoints[i].lon]);
+            }
+
+            currentPoints = points;
+
+            const startTime = points[0].time;
+            const endTime = points[points.length - 1].time;
+            let durationMinutes = null;
+            if (startTime && endTime && !isNaN(startTime) && !isNaN(endTime)) {
+                durationMinutes = Math.round((endTime - startTime) / (1000 * 60));
+            }
+
+            currentGpxData = {
+                distanceKm: cumulativeDistance,
+                durationMinutes: durationMinutes,
+                startTime: startTime
+            };
+
+            if (currentPolyline) map.removeLayer(currentPolyline);
+            document.getElementById('placeholder-text').style.display = 'none';
+
+            currentPolyline = L.polyline(latLngs, {
+                color: isDarkTheme ? '#ffffff' : '#111111',
+                opacity: 0.75,
+                weight: 2.5,
+                lineCap: 'round',
+                lineJoin: 'round'
+            }).addTo(map);
+
+            const currentBounds = currentPolyline.getBounds();
+            map.fitBounds(currentBounds, { padding: [70, 70] });
+
+            const center = currentBounds.getCenter();
+            oppdaterKoordinater(center.lat, center.lng);
+            hentStedsnavn(center.lat, center.lng);
+            oppdaterMetaVisning();
+            genererHoydeprofil(points);
+
+            setTimeout(() => {
+                hentFjelltopper();
+            }, 200);
+
+            document.getElementById('download-btn').style.display = 'inline-flex';
+        }
+
+        function oppdaterMetaVisning() {
+            if (!currentGpxData) return;
+
+            const showDist = document.getElementById('chk-dist').checked;
+            const showTime = document.getElementById('chk-time').checked;
+            const showDate = document.getElementById('chk-date').checked;
+            const showClock = document.getElementById('chk-clock').checked;
+
+            let parts = [];
+
+            if (showDist && currentGpxData.distanceKm) {
+                parts.push(`${currentGpxData.distanceKm.toFixed(1)} KM`);
+            }
+
+            if (showTime && currentGpxData.durationMinutes) {
+                const hrs = Math.floor(currentGpxData.durationMinutes / 60);
+                const mins = currentGpxData.durationMinutes % 60;
+                const timeStr = hrs > 0 ? `${hrs}T ${mins}M` : `${mins}M`;
+                parts.push(timeStr);
+            }
+
+            if (currentGpxData.startTime && !isNaN(currentGpxData.startTime)) {
+                if (showDate) {
+                    const dateStr = currentGpxData.startTime.toLocaleDateString('no-NO', {
+                        day: '2-digit', month: '2-digit', year: 'numeric'
+                    });
+                    parts.push(dateStr);
+                }
+                if (showClock) {
+                    const clockStr = currentGpxData.startTime.toLocaleTimeString('no-NO', {
+                        hour: '2-digit', minute: '2-digit'
+                    });
+                    parts.push(clockStr);
+                }
+            }
+
+            const container = document.getElementById('meta-stats');
+            container.innerText = parts.join('  •  ');
+        }
+
+        async function hentFjelltopper() {
+            peakMarkersGroup.clearLayers();
+
+            const bounds = map.getBounds();
+            const center = map.getCenter();
+            const radiusMeters = Math.min(Math.round(center.distanceTo(bounds.getNorthEast())), 50000);
+
+            const url = `https://ws.geonorge.no/stedsnavn/v1/punkt?nord=${center.lat}&ost=${center.lng}&radius=${radiusMeters}&navneobjekttype=Fjell&maxAntall=150`;
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Feil fra Geonorge Stedsnavn API");
+                const data = await res.json();
+
+                if (data && data.navn && data.navn.length > 0) {
+                    tegnTopper(data.navn);
+                } else {
+                    hentFjelltopperOverpass();
+                }
+            } catch (err) {
+                console.warn("Kartverket API feilet, prøver Overpass fallback...", err);
+                hentFjelltopperOverpass();
+            }
+        }
+
+        window.removePeak = function(peakKey) {
+            removedPeaks.add(peakKey);
+            customPositions.delete(peakKey);
+            hentFjelltopper();
+        };
+
+        function tegnTopper(toppListe) {
+            const bounds = map.getBounds();
+            const unikeTopper = new Map();
+
+            toppListe.forEach(item => {
+                let lat, lon, name, ele;
+
+                if (item.representasjonspunkt) {
+                    lat = item.representasjonspunkt.nord;
+                    lon = item.representasjonspunkt.ost;
+                    name = item.stedsnavn?.[0]?.skrivemåte || item.kommuner?.[0]?.kommunenavn;
+                    ele = item.stedsnavn?.[0]?.høyde;
+                } else if (item.posisjon) {
+                    lat = item.posisjon.lat;
+                    lon = item.posisjon.lng;
+                    name = item.navn;
+                    ele = item.høyde;
+                }
+
+                if (lat && lon && name) {
+                    const nøkkel = `${name.toLowerCase().replace(/\s+/g, '')}_${Math.round(lat*1000)}_${Math.round(lon*1000)}`;
+                    
+                    if (bounds.contains([lat, lon]) && !unikeTopper.has(nøkkel) && !removedPeaks.has(nøkkel)) {
+                        unikeTopper.set(nøkkel, { lat, lon, name, ele, key: nøkkel });
+                    }
+                }
+            });
+
+            unikeTopper.forEach(peak => {
+                const peakLatLng = L.latLng(peak.lat, peak.lon);
+
+                L.circleMarker(peakLatLng, {
+                    radius: 3,
+                    color: isDarkTheme ? '#ffffff' : '#111111',
+                    fillColor: isDarkTheme ? '#ffffff' : '#111111',
+                    fillOpacity: 0.9,
+                    stroke: false
+                }).addTo(peakMarkersGroup);
+
+                let labelLatLng;
+                if (customPositions.has(peak.key)) {
+                    labelLatLng = customPositions.get(peak.key);
+                } else {
+                    const offsetLat = peak.lat + 0.0025;
+                    const offsetLon = peak.lon + 0.004;
+                    labelLatLng = L.latLng(offsetLat, offsetLon);
+                }
+
+                const connectorLine = L.polyline([peakLatLng, labelLatLng], {
+                    color: isDarkTheme ? '#ffffff' : '#111111',
+                    weight: 1.2,
+                    dashArray: '2, 3',
+                    opacity: 0.7
+                }).addTo(peakMarkersGroup);
+
+                const labelText = peak.ele ? `${peak.name.toUpperCase()} ${peak.ele}M` : peak.name.toUpperCase();
+
+                const htmlContent = `
+                    <div class="peak-label-text">
+                        <span>${labelText}</span>
+                        <span class="peak-remove-btn" onclick="removePeak('${peak.key}')">&times;</span>
+                    </div>
+                `;
+
+                const customIcon = L.divIcon({
+                    className: 'peak-label-container',
+                    html: htmlContent,
+                    iconSize: null
+                });
+
+                const labelMarker = L.marker(labelLatLng, {
+                    icon: customIcon,
+                    draggable: true
+                }).addTo(peakMarkersGroup);
+
+                labelMarker.on('drag', function(e) {
+                    const newPos = e.latlng;
+                    connectorLine.setLatLngs([peakLatLng, newPos]);
+                    customPositions.set(peak.key, newPos);
+                });
+            });
+        }
+
+        async function hentFjelltopperOverpass() {
+            const bounds = map.getBounds();
+            const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
+            const query = `[out:json][timeout:10];node["natural"="peak"](${bbox});out body;`;
+            const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                if (data && data.elements) {
+                    const prilagteTopper = data.elements.map(el => ({
+                        posisjon: { lat: el.lat, lng: el.lon },
+                        navn: el.tags.name,
+                        høyde: el.tags.ele
+                    })).filter(t => t.navn);
+
+                    tegnTopper(prilagteTopper);
+                }
+            } catch (e) {
+                console.error("Kunne ikke hente topper fra Overpass", e);
+            }
+        }
+
+        function oppdaterKoordinater(lat, lng) {
+            const latStr = Math.abs(lat).toFixed(4) + '° ' + (lat >= 0 ? 'N' : 'S');
+            const lngStr = Math.abs(lng).toFixed(4) + '° ' + (lng >= 0 ? 'E' : 'W');
+            document.getElementById('coordinates').innerText = `${latStr} / ${lngStr}`;
+        }
+
+        async function hentStedsnavn(lat, lng) {
+            document.getElementById('location-name').innerText = "HENTER STED...";
+            document.getElementById('location-sub').innerText = "";
+
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=12`);
+                const data = await res.json();
+                
+                const addr = data.address || {};
+                const hovedNavn = addr.mountain || addr.natural || addr.village || addr.town || addr.municipality || "UTEN NAVN";
+                const underNavn = addr.county || addr.state || addr.country || "";
+
+                document.getElementById('location-name').innerText = hovedNavn.toUpperCase();
+                document.getElementById('location-sub').innerText = underNavn.toUpperCase();
+            } catch (err) {
+                document.getElementById('location-name').innerText = "SPORUTSNITT";
+                document.getElementById('location-sub').innerText = "";
+            }
+        }
+
+        function genererHoydeprofil(points) {
+            const profileContainer = document.getElementById('elevation-profile');
+            profileContainer.innerHTML = '';
+
+            const validPoints = points.filter(p => p.ele !== null && !isNaN(p.ele));
+            if (validPoints.length < 2) return;
+
+            const totalDist = validPoints[validPoints.length - 1].dist;
+            if (totalDist === 0) return;
+
+            const minElev = Math.min(...validPoints.map(p => p.ele));
+            const maxElev = Math.max(...validPoints.map(p => p.ele));
+            const elevRange = (maxElev - minElev) || 1;
+
+            const width = 600;
+            const height = 55;
+            const padding = 4;
+
+            let pathD = "";
+            let areaD = "";
+
+            validPoints.forEach((pt, index) => {
+                const x = (pt.dist / totalDist) * width;
+                const normY = (pt.ele - minElev) / elevRange;
+                const y = height - (normY * (height - padding * 2) + padding);
+
+                if (index === 0) {
+                    pathD += `M ${x.toFixed(1)} ${y.toFixed(1)}`;
+                    areaD += `M ${x.toFixed(1)} ${height} L ${x.toFixed(1)} ${y.toFixed(1)}`;
+                } else {
+                    pathD += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+                    areaD += ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+                }
+            });
+
+            areaD += ` L ${width} ${height} Z`;
+
+            const strokeColor = isDarkTheme ? '#ffffff' : '#111111';
+
+            const svgHTML = `
+                <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="elevGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.25" />
+                            <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.0" />
+                        </linearGradient>
+                    </defs>
+                    <path d="${areaD}" fill="url(#elevGrad)" />
+                    <path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            `;
+
+            profileContainer.innerHTML = svgHTML;
+        }
+
+        document.getElementById('download-btn').addEventListener('click', function() {
+            const frame = document.getElementById('poster-frame');
+            frame.classList.add('rendering-canvas');
+            
+            html2canvas(frame, {
+                useCORS: true,
+                allowTaint: false,
+                scale: 2
+            }).then(canvas => {
+                frame.classList.remove('rendering-canvas');
+                const link = document.createElement('a');
+                link.download = 'gpx-poster-1040x1040.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }).catch(err => {
+                frame.classList.remove('rendering-canvas');
+            });
+        });
+    </script>
+</body>
+</html>
